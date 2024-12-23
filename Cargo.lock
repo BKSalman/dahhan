@@ -477,6 +477,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "env_logger",
+ "glam",
  "glyphon",
  "pollster",
  "wgpu",
@@ -794,6 +795,12 @@ dependencies = [
  "log",
  "xml-rs",
 ]
+
+[[package]]
+name = "glam"
+version = "0.29.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc46dd3ec48fdd8e693a98d2b8bafae273a2d54c1de02a2a7e3d57d501f39677"
 
 [[package]]
 name = "glow"

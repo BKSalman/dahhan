@@ -1,24 +1,30 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{
+    borrow::Cow,
+    num::{NonZero, NonZeroU64},
+    sync::Arc,
+};
 
 use egui_wgpu::ScreenDescriptor;
 use egui_winit::EventResponse;
 use wgpu::{
-    BindGroup, BufferDescriptor, Device, PipelineCompilationOptions, Queue, RenderPipeline,
-    Surface, SurfaceConfiguration, TextureViewDescriptor,
+    util::RenderEncoder, BindGroup, BufferDescriptor, Device, PipelineCompilationOptions, Queue,
+    RenderPipeline, Surface, SurfaceConfiguration,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{egui::EguiRenderer, vertices::VertexColored};
+use crate::{buffers::SlicedBuffer, egui_renderer::EguiRenderer, vertices::VertexColored};
 
 pub struct Renderer {
-    window: Arc<Window>,
     surface: Surface<'static>,
+    window: Arc<Window>,
     config: SurfaceConfiguration,
     device: Device,
     queue: Queue,
     render_pipeline: RenderPipeline,
     uniform_bind_group: BindGroup,
-    pub egui_renderer: EguiRenderer,
+    egui_renderer: EguiRenderer,
+    vertex_buffer: SlicedBuffer,
+    index_buffer: SlicedBuffer,
 }
 
 impl Renderer {
@@ -56,7 +62,7 @@ impl Renderer {
         // Load the shaders from disk
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("test-shader.wgsl"))),
         });
 
         let uniform_bind_group_layout =
@@ -124,7 +130,17 @@ impl Renderer {
         });
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
+        let swapchain_format = swapchain_capabilities
+            .formats
+            .iter()
+            .find(|f| f.is_srgb())
+            .copied()
+            .unwrap_or(swapchain_capabilities.formats[0]);
+
+        let config = surface
+            .get_default_config(&adapter, size.width, size.height)
+            .unwrap();
+        surface.configure(&device, &config);
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -163,10 +179,24 @@ impl Renderer {
             cache: None,
         });
 
-        let config = surface
-            .get_default_config(&adapter, size.width, size.height)
-            .unwrap();
-        surface.configure(&device, &config);
+        const VERTEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
+            (std::mem::size_of::<VertexColored>() * 1024) as _;
+        const INDEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
+            (std::mem::size_of::<u32>() * 1024 * 3) as _;
+
+        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Index Buffer"),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            size: INDEX_BUFFER_START_CAPACITY,
+            mapped_at_creation: false,
+        });
+
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Vertex Buffer"),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: VERTEX_BUFFER_START_CAPACITY,
+            mapped_at_creation: false,
+        });
 
         Self {
             surface,
@@ -177,6 +207,8 @@ impl Renderer {
             queue,
             uniform_bind_group,
             window,
+            index_buffer: SlicedBuffer::new(index_buffer, INDEX_BUFFER_START_CAPACITY),
+            vertex_buffer: SlicedBuffer::new(vertex_buffer, VERTEX_BUFFER_START_CAPACITY),
         }
     }
 
@@ -184,10 +216,13 @@ impl Renderer {
         self.config.width = new_size.width.max(1);
         self.config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.config);
-        // On macos the window needs to be redrawn manually after resizing
     }
 
-    pub fn draw(&mut self) {
+    pub fn update(&mut self) {
+        // TODO
+    }
+
+    pub fn draw(&mut self, egui_ui: impl FnMut(&egui::Context), clear_color: wgpu::Color) {
         let frame = self
             .surface
             .get_current_texture()
@@ -207,7 +242,7 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                        load: wgpu::LoadOp::Clear(clear_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -217,7 +252,40 @@ impl Renderer {
             });
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            // rpass.draw(0..3, 0..1);
+            let mut vertex_buffer_staging = self.vertex_buffer.write_into(
+                &self.queue,
+                NonZero::new((std::mem::size_of::<VertexColored>() * 3) as u64).unwrap(),
+            );
+
+            let left = -1.0;
+            let right = 1.0;
+            let bottom = -1.0;
+            let top = 1.0;
+            let near = -1.0;
+            let far = 1.0;
+
+            let ortho_matrix = glam::Mat4::orthographic_rh(left, right, bottom, top, near, far);
+
+            let mut triangle = vec![
+                VertexColored {
+                    position: [-0.5, -0.5, 0.],
+                    color: [0.0, 0.0, 0.0],
+                },
+                VertexColored {
+                    position: [0.5, -0.5, 0.],
+                    color: [0.0, 0.0, 0.0],
+                },
+                VertexColored {
+                    position: [0.0, 0.5, 0.],
+                    color: [0.0, 0.0, 0.0],
+                },
+            ];
+
+            vertex_buffer_staging.copy_from_slice(bytemuck::cast_slice(&triangle));
+
+            rpass.set_vertex_buffer(0, self.vertex_buffer.get_slice(..));
+
+            rpass.draw(0..3, 0..1);
         }
 
         let screen_descriptor = ScreenDescriptor {
@@ -232,9 +300,7 @@ impl Renderer {
             &self.window,
             &view,
             screen_descriptor,
-            |ctx| {
-                egui::Window::new("lmao").show(ctx, |ui| ui.label("lmfao"));
-            },
+            egui_ui,
         );
 
         self.queue.submit(Some(encoder.finish()));

@@ -1,8 +1,8 @@
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct VertexColored {
-    position: [f32; 3],
-    color: [f32; 3],
+    pub position: [f32; 3],
+    pub color: [f32; 3],
 }
 
 impl VertexColored {
