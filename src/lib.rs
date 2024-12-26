@@ -25,21 +25,20 @@ pub trait Game {
     // TODO: Figure out where to use these
     // fn update(&mut self);
     // fn render(&mut self);
-
     fn egui_render(&mut self, context: &egui::Context);
 }
 
-pub struct App {
+pub struct Engine {
     state: State,
     event_loop: EventLoop<()>,
 }
 
-impl App {
-    pub fn new() -> Self {
+impl Engine {
+    pub fn new(game: Box<dyn Game>) -> Self {
         let event_loop = EventLoop::new().unwrap();
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
-        let state = State::new();
+        let state = State::new(game);
 
         Self { event_loop, state }
     }
@@ -54,15 +53,17 @@ struct State {
     window_id: Option<WindowId>,
     renderer: Option<Renderer>,
     last_frame_time: Instant,
+    game: Box<dyn Game>,
 }
 
 impl State {
-    fn new() -> Self {
+    fn new(game: Box<dyn Game>) -> Self {
         Self {
             window: None,
             window_id: None,
             renderer: None,
             last_frame_time: Instant::now(),
+            game,
         }
     }
 }
@@ -103,7 +104,12 @@ impl winit::application::ApplicationHandler for State {
                 }
                 WindowEvent::RedrawRequested => {
                     renderer.update();
-                    renderer.draw(|ctx| {}, wgpu::Color::BLACK);
+                    renderer.draw(
+                        |ctx| {
+                            self.game.egui_render(ctx);
+                        },
+                        wgpu::Color::BLACK,
+                    );
                     self.last_frame_time = Instant::now();
                 }
 
