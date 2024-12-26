@@ -7,9 +7,27 @@ use winit::{
 };
 
 mod buffers;
+mod camera_uniform;
 mod egui_renderer;
+pub mod orthographic_camera;
 pub mod renderer;
 mod vertices;
+
+#[rustfmt::skip]
+pub(crate) const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::Mat4::from_cols_array(&[
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.5,
+    0.0, 0.0, 0.0, 1.0,
+]);
+
+pub trait Game {
+    // TODO: Figure out where to use these
+    // fn update(&mut self);
+    // fn render(&mut self);
+
+    fn egui_render(&mut self, context: &egui::Context);
+}
 
 pub struct App {
     state: State,
@@ -78,17 +96,6 @@ impl winit::application::ApplicationHandler for State {
 
         let event_res = renderer.handle_egui_event(&event);
 
-        let ui = |ctx: &egui::Context| {
-            egui::Window::new("lmao").show(ctx, |ui| {
-                ui.label(format!(
-                    "{}ms",
-                    Instant::now()
-                        .duration_since(self.last_frame_time)
-                        .as_millis()
-                ))
-            });
-        };
-
         if !event_res.consumed {
             match event {
                 WindowEvent::Resized(new_size) => {
@@ -96,7 +103,7 @@ impl winit::application::ApplicationHandler for State {
                 }
                 WindowEvent::RedrawRequested => {
                     renderer.update();
-                    renderer.draw(ui, wgpu::Color::BLACK);
+                    renderer.draw(|ctx| {}, wgpu::Color::BLACK);
                     self.last_frame_time = Instant::now();
                 }
 

@@ -1,18 +1,42 @@
-use std::{
-    borrow::Cow,
-    num::{NonZero, NonZeroU64},
-    sync::Arc,
-};
+use std::{borrow::Cow, sync::Arc};
 
 use egui_wgpu::ScreenDescriptor;
 use egui_winit::EventResponse;
 use wgpu::{
-    util::RenderEncoder, BindGroup, BufferDescriptor, Device, PipelineCompilationOptions, Queue,
-    RenderPipeline, Surface, SurfaceConfiguration,
+    util::DeviceExt, BindGroup, Device, PipelineCompilationOptions, Queue, RenderPipeline, Surface,
+    SurfaceConfiguration,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-use crate::{buffers::SlicedBuffer, egui_renderer::EguiRenderer, vertices::VertexColored};
+use crate::{
+    buffers::SlicedBuffer, camera_uniform::CameraUniform, egui_renderer::EguiRenderer,
+    orthographic_camera::OrthographicCamera, vertices::VertexColored,
+};
+
+const VERTICES: &[VertexColored] = &[
+    VertexColored {
+        position: [-0.0868241, 0.49240386, 0.0],
+        color: [0.5, 0.0, 0.5],
+    },
+    VertexColored {
+        position: [-0.49513406, 0.06958647, 0.0],
+        color: [0.5, 0.0, 0.5],
+    },
+    VertexColored {
+        position: [-0.21918549, -0.44939706, 0.0],
+        color: [0.5, 0.0, 0.5],
+    },
+    VertexColored {
+        position: [0.35966998, -0.3473291, 0.0],
+        color: [0.5, 0.0, 0.5],
+    },
+    VertexColored {
+        position: [0.44147372, 0.2347359, 0.0],
+        color: [0.5, 0.0, 0.5],
+    },
+];
+
+const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
 pub struct Renderer {
     surface: Surface<'static>,
@@ -21,14 +45,18 @@ pub struct Renderer {
     device: Device,
     queue: Queue,
     render_pipeline: RenderPipeline,
-    uniform_bind_group: BindGroup,
+    camera_bind_group: BindGroup,
     egui_renderer: EguiRenderer,
     vertex_buffer: SlicedBuffer,
+    num_indices: u32,
     index_buffer: SlicedBuffer,
+    camera: OrthographicCamera,
+    camera_buffer: wgpu::Buffer,
+    camera_uniform: CameraUniform,
 }
 
 impl Renderer {
-    pub fn new(window: Arc<Window>) -> Self {
+    pub(crate) fn new(window: Arc<Window>) -> Self {
         let mut size = window.inner_size();
         size.width = size.width.max(1);
         size.height = size.height.max(1);
@@ -65,7 +93,19 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("test-shader.wgsl"))),
         });
 
-        let uniform_bind_group_layout =
+        let camera = OrthographicCamera::new(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
+
+        let mut camera_uniform = CameraUniform::new();
+        let view_projection_matrix = &camera.build_view_projection_matrix();
+        camera_uniform.update_view_proj(&view_projection_matrix);
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Uniform Bind Group Layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -80,52 +120,41 @@ impl Renderer {
                 }],
             });
 
-        let uniform_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("Uniform Buffer"),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            size: 1024,
-            mapped_at_creation: true,
-        });
-
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Uniform Bind Group"),
-            layout: &uniform_bind_group_layout,
+            layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &uniform_buffer,
-                    offset: 0,
-                    size: None,
-                }),
+                resource: camera_buffer.as_entire_binding(),
             }],
         });
 
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Texture Bind Group Layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
+        // let texture_bind_group_layout =
+        //     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //         label: Some("Texture Bind Group Layout"),
+        //         entries: &[
+        //             wgpu::BindGroupLayoutEntry {
+        //                 binding: 0,
+        //                 visibility: wgpu::ShaderStages::FRAGMENT,
+        //                 ty: wgpu::BindingType::Texture {
+        //                     multisampled: false,
+        //                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        //                     view_dimension: wgpu::TextureViewDimension::D2,
+        //                 },
+        //                 count: None,
+        //             },
+        //             wgpu::BindGroupLayoutEntry {
+        //                 binding: 1,
+        //                 visibility: wgpu::ShaderStages::FRAGMENT,
+        //                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        //                 count: None,
+        //             },
+        //         ],
+        //     });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout],
+            bind_group_layouts: &[&camera_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -179,24 +208,27 @@ impl Renderer {
             cache: None,
         });
 
-        const VERTEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
-            (std::mem::size_of::<VertexColored>() * 1024) as _;
-        const INDEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
-            (std::mem::size_of::<u32>() * 1024 * 3) as _;
+        // const VERTEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
+        //     (std::mem::size_of::<VertexColored>() * 1024) as _;
+        // const INDEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
+        //     (std::mem::size_of::<u32>() * 1024 * 3) as _;
 
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Index Buffer"),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            size: INDEX_BUFFER_START_CAPACITY,
-            mapped_at_creation: false,
-        });
-
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: VERTEX_BUFFER_START_CAPACITY,
-            mapped_at_creation: false,
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
         });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let vertex_buffer_size = vertex_buffer.size();
+        let index_buffer_size = index_buffer.size();
+
+        let num_indices = INDICES.len() as u32;
 
         Self {
             surface,
@@ -205,24 +237,28 @@ impl Renderer {
             device,
             render_pipeline,
             queue,
-            uniform_bind_group,
             window,
-            index_buffer: SlicedBuffer::new(index_buffer, INDEX_BUFFER_START_CAPACITY),
-            vertex_buffer: SlicedBuffer::new(vertex_buffer, VERTEX_BUFFER_START_CAPACITY),
+            index_buffer: SlicedBuffer::new(index_buffer, index_buffer_size),
+            vertex_buffer: SlicedBuffer::new(vertex_buffer, vertex_buffer_size),
+            camera,
+            camera_bind_group,
+            camera_uniform,
+            camera_buffer,
+            num_indices,
         }
     }
 
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+    pub(crate) fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.config.width = new_size.width.max(1);
         self.config.height = new_size.height.max(1);
         self.surface.configure(&self.device, &self.config);
     }
 
-    pub fn update(&mut self) {
+    pub(crate) fn update(&mut self) {
         // TODO
     }
 
-    pub fn draw(&mut self, egui_ui: impl FnMut(&egui::Context), clear_color: wgpu::Color) {
+    pub(crate) fn draw(&mut self, egui_ui: impl FnMut(&egui::Context), clear_color: wgpu::Color) {
         let frame = self
             .surface
             .get_current_texture()
@@ -251,41 +287,10 @@ impl Renderer {
                 occlusion_query_set: None,
             });
             rpass.set_pipeline(&self.render_pipeline);
-            rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            let mut vertex_buffer_staging = self.vertex_buffer.write_into(
-                &self.queue,
-                NonZero::new((std::mem::size_of::<VertexColored>() * 3) as u64).unwrap(),
-            );
-
-            let left = -1.0;
-            let right = 1.0;
-            let bottom = -1.0;
-            let top = 1.0;
-            let near = -1.0;
-            let far = 1.0;
-
-            let ortho_matrix = glam::Mat4::orthographic_rh(left, right, bottom, top, near, far);
-
-            let mut triangle = vec![
-                VertexColored {
-                    position: [-0.5, -0.5, 0.],
-                    color: [0.0, 0.0, 0.0],
-                },
-                VertexColored {
-                    position: [0.5, -0.5, 0.],
-                    color: [0.0, 0.0, 0.0],
-                },
-                VertexColored {
-                    position: [0.0, 0.5, 0.],
-                    color: [0.0, 0.0, 0.0],
-                },
-            ];
-
-            vertex_buffer_staging.copy_from_slice(bytemuck::cast_slice(&triangle));
-
+            rpass.set_bind_group(0, &self.camera_bind_group, &[]);
             rpass.set_vertex_buffer(0, self.vertex_buffer.get_slice(..));
-
-            rpass.draw(0..3, 0..1);
+            rpass.set_index_buffer(self.index_buffer.get_slice(..), wgpu::IndexFormat::Uint16);
+            rpass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         let screen_descriptor = ScreenDescriptor {
@@ -307,7 +312,7 @@ impl Renderer {
         frame.present();
     }
 
-    pub fn handle_egui_event(&mut self, event: &WindowEvent) -> EventResponse {
+    pub(crate) fn handle_egui_event(&mut self, event: &WindowEvent) -> EventResponse {
         self.egui_renderer.handle_input(&self.window, event)
     }
 }

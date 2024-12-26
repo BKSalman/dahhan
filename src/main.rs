@@ -3,7 +3,7 @@ use dahhan::App;
 pub fn main() {
     env_logger::init();
 
-    let app = App::new();
+    let engine = App::new();
 
-    app.run().unwrap();
+    engine.run().unwrap();
 }
