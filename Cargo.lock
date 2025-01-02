@@ -132,6 +132,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.95"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
+
+[[package]]
 name = "arboard"
 version = "3.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -472,6 +478,7 @@ checksum = "96a6ac251f4a2aca6b3f91340350eab87ae57c3f127ffeb585e92bd336717991"
 name = "dahhan"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "egui",
  "egui-wgpu",
@@ -480,6 +487,7 @@ dependencies = [
  "glam",
  "glyphon",
  "pollster",
+ "rustc-hash 2.1.0",
  "tracing",
  "wgpu",
  "winit",

@@ -6,8 +6,12 @@ use winit::{
     window::{Window, WindowId},
 };
 
+pub use ecs::world::World;
+
+mod anymap;
 mod buffers;
 mod camera_uniform;
+mod ecs;
 mod egui_renderer;
 pub mod orthographic_camera;
 pub mod renderer;
@@ -21,26 +25,24 @@ pub(crate) const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::Mat4::from_cols_array
     0.0, 0.0, 0.0, 1.0,
 ]);
 
-pub trait Game {
-    // TODO: Figure out where to use these
-    // fn update(&mut self);
-    // fn render(&mut self);
-    fn egui_render(&mut self, context: &egui::Context);
-}
-
-pub struct Engine {
+pub struct App {
     state: State,
     event_loop: EventLoop<()>,
+    world: World,
 }
 
-impl Engine {
-    pub fn new(game: Box<dyn Game>) -> Self {
+impl App {
+    pub fn new() -> Self {
         let event_loop = EventLoop::new().unwrap();
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
-        let state = State::new(game);
+        let state = State::new();
 
-        Self { event_loop, state }
+        Self {
+            event_loop,
+            state,
+            world: World::new(),
+        }
     }
 
     pub fn run(mut self) -> Result<(), winit::error::EventLoopError> {
@@ -53,17 +55,15 @@ struct State {
     window_id: Option<WindowId>,
     renderer: Option<Renderer>,
     last_frame_time: Instant,
-    game: Box<dyn Game>,
 }
 
 impl State {
-    fn new(game: Box<dyn Game>) -> Self {
+    fn new() -> Self {
         Self {
             window: None,
             window_id: None,
             renderer: None,
             last_frame_time: Instant::now(),
-            game,
         }
     }
 }
@@ -104,12 +104,7 @@ impl winit::application::ApplicationHandler for State {
                 }
                 WindowEvent::RedrawRequested => {
                     renderer.update();
-                    renderer.draw(
-                        |ctx| {
-                            self.game.egui_render(ctx);
-                        },
-                        wgpu::Color::BLACK,
-                    );
+                    renderer.draw(|ctx| {}, wgpu::Color::BLACK);
                     self.last_frame_time = Instant::now();
                 }
 
