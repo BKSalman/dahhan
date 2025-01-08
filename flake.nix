@@ -42,17 +42,34 @@
           xorg.libX11
         ];
       in with pkgs; {
-        devShells.${system}.default = mkShell {
-          inherit buildInputs nativeBuildInputs;
+        devShells.${system} = {
+          default = mkShell {
+            inherit buildInputs nativeBuildInputs;
 
-          packages = with pkgs; [
-            (rust-bin.stable.latest.default.override {
-              extensions = [ "rust-src" "rust-analyzer" ];
-            })
-            cargo-watch
-          ];
+            packages = with pkgs; [
+              (rust-bin.stable.latest.default.override {
+                extensions = [ "rust-src" "rust-analyzer" ];
+              })
+              (rust-bin.nightly.latest.default.override {
+                extensions = [ "rust-src" "rust-std" "miri" ];
+              })
+              cargo-watch
+            ];
 
-          LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
+            LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
+          };
+          nightly = mkShell {
+            inherit buildInputs nativeBuildInputs;
+
+            packages = with pkgs; [
+              (rust-bin.nightly.latest.default.override {
+                extensions = [ "rust-src" "rust-std" "miri" ];
+              })
+              cargo-watch
+            ];
+
+            LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
+          };
         };
       };
 }
