@@ -1,2 +1,2 @@
-mod blob_vec;
-pub mod table;
+pub mod blob_vec;
+pub mod sparse_set;

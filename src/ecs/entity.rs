@@ -1,24 +1,18 @@
-use crate::anymap::AnyMap;
+use super::{generational_array::GenerationalIndex, storage::sparse_set::SparseIndex};
 
-use super::{
-    archetype::{Archetype, ArchetypeId, ArchetypeRow},
-    generational_array::{GenerationalIndex, GenerationalIndexAllocator, GenerationalIndexArray},
-    storage::table::TableRow,
-};
+// pub struct EntityAllocator(GenerationalIndexAllocator);
 
-pub struct EntityAllocator(GenerationalIndexAllocator);
+// impl EntityAllocator {
+//     pub fn new() -> Self {
+//         Self(GenerationalIndexAllocator::new())
+//     }
 
-impl EntityAllocator {
-    pub fn new() -> Self {
-        Self(GenerationalIndexAllocator::new())
-    }
+//     pub fn allocate(&mut self) -> Entity {
+//         Entity(self.0.allocate())
+//     }
+// }
 
-    pub fn allocate(&mut self) -> Entity {
-        Entity(self.0.allocate())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Entity(GenerationalIndex);
 
 impl Entity {
@@ -27,48 +21,18 @@ impl Entity {
     }
 }
 
-pub struct EntityMap(GenerationalIndexArray<EntityMeta>);
-
-impl EntityMap {
-    pub fn new() -> Self {
-        Self(GenerationalIndexArray::new())
-    }
-
-    pub fn insert(&mut self, entity: Entity, value: EntityMeta) {
-        self.0.insert(entity.0, value);
-    }
-
-    pub fn get(&self, entity: Entity) -> Option<&EntityMeta> {
-        self.0.get(entity.0)
-    }
-
-    pub fn get_mut(&mut self, entity: Entity) -> Option<&mut EntityMeta> {
-        self.0.get_mut(entity.0)
-    }
-
-    pub(crate) unsafe fn set(&mut self, entity: Entity, new_meta: EntityMeta) {
-        let meta = self.0.get_unchecked_mut(entity.0);
-        *meta = new_meta;
+impl From<GenerationalIndex> for Entity {
+    fn from(value: GenerationalIndex) -> Self {
+        Self(value)
     }
 }
 
-pub struct EntityMeta {
-    pub(crate) archetype_id: ArchetypeId,
-    pub(crate) table_row: TableRow,
-    pub(crate) archetype_row: ArchetypeRow,
-}
-
-pub struct EntityBuilder {
-    components: AnyMap,
-}
-
-impl EntityBuilder {
-    pub fn new() -> Self {
-        Self {
-            components: AnyMap::new(),
-        }
+impl SparseIndex for Entity {
+    fn sparse_index(&self) -> usize {
+        self.index()
     }
 
-    // pub fn with_component(&mut self, compo) -> &mut Self {
-    // }
+    fn new_sparse_index(value: usize) -> Self {
+        Self(GenerationalIndex::from_raw(value))
+    }
 }

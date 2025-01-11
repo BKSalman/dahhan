@@ -6,29 +6,27 @@ use std::{
 use crate::anymap::AnyMap;
 
 use super::{
-    archetype::{Archetype, ArchetypeId, ArchetypeRow, Archetypes},
-    entity::{Entity, EntityAllocator, EntityBuilder, EntityMap, EntityMeta},
+    component::{Components, ComponentsInfo},
+    entity::Entity,
     generational_array::GenerationalIndexAllocator,
-    storage::table::{TableRow, Tables},
-    ComponentId,
 };
 
 pub struct World {
-    entity_allocator: EntityAllocator,
-    entities: EntityMap,
-    archetypes: Archetypes,
-    tables: Tables,
+    entity_allocator: GenerationalIndexAllocator,
+    entities: Vec<Entity>,
+    components_info: ComponentsInfo,
+    components: Components,
     resources: AnyMap,
 }
 
 impl World {
     pub fn new() -> Self {
         Self {
-            entity_allocator: EntityAllocator::new(),
-            entities: EntityMap::new(),
-            archetypes: Archetypes::new(),
             resources: AnyMap::new(),
-            tables: Tables::new(),
+            components: Components::new(),
+            components_info: ComponentsInfo::new(),
+            entity_allocator: GenerationalIndexAllocator::new(),
+            entities: Vec::new(),
         }
     }
 
@@ -60,122 +58,48 @@ impl World {
         Ok(resource.write().unwrap())
     }
 
-    fn create_entity(&mut self) -> Entity {
+    pub fn register_component<T: 'static>(&mut self) {
+        let component_id = self.components_info.register_component::<T>();
+        self.components.register_component::<T>(component_id);
+    }
+
+    // FIXME: this should NOT use a Box, that's very bad
+    pub fn add_entity(&mut self, components: Vec<Box<dyn Any>>) -> Entity {
         let entity = self.entity_allocator.allocate();
-        self.entities.insert(
-            entity,
-            EntityMeta {
-                archetype_id: ArchetypeId::EMPTY,
-                table_row: TableRow::INVALID,
-                archetype_row: ArchetypeRow::INVALID,
-            },
-        );
+        let entity = Entity::from(entity);
+        self.entities.push(entity);
+
+        for component in components {
+            let component_info = self
+                .components_info
+                .get_by_type_id(component.type_id())
+                .unwrap();
+            self.components
+                .insert_component(entity, component_info.id(), component);
+        }
 
         entity
     }
 
-    pub fn has_component<T: Any>(&self, entity: Entity) -> bool {
-        let entity_meta = self.entities.get(entity).unwrap();
-
-        let component_id = TypeId::of::<T>();
-
-        let archetype_set = self.archetypes.get_archetype_sets(component_id).unwrap();
-
-        archetype_set.contains(&entity_meta.archetype_id)
-    }
-
-    pub fn add_component<T: Any>(&mut self, entity: Entity, component: T) {
-        let Some(entity_meta) = self.entities.get_mut(entity) else {
-            return;
-        };
-
-        let component_id = component.type_id();
-
-        let new_archetype_id = insert_bundle_into_archetype(
-            component_id,
-            &mut self.archetypes,
-            entity_meta.archetype_id,
-        );
-
-        let Some(entity_archetype) = self.archetypes.get_mut(entity_meta.archetype_id) else {
-            return;
-        };
-
-        if new_archetype_id == entity_archetype.id() {
-            // TODO: make sure the add is cached as an edge
-            let entry = entity_archetype.edges_mut().entry(component_id).or_insert(
-                super::archetype::ArchetypeEdge {
-                    add: Some(new_archetype_id),
-                    remove: None,
-                },
-            );
-
-            entry.add = Some(new_archetype_id);
-        } else {
-            // TODO: move entity to new archetype
-            entity_meta.archetype_id = new_archetype_id;
-
-            let result = entity_archetype.swap_remove(entity_meta.archetype_row);
-
-            if let Some(swapped_entity) = result.swapped_entity {
-                let archetype_row = entity_meta.archetype_row;
-                let swapped_location =
-                        // SAFETY: If the swap was successful, swapped_entity must be valid.
-                        unsafe { self.entities.get(swapped_entity).unwrap_unchecked() };
-                unsafe {
-                    self.entities.set(
-                        swapped_entity,
-                        EntityMeta {
-                            archetype_id: swapped_location.archetype_id,
-                            archetype_row,
-                            table_row: swapped_location.table_row,
-                        },
-                    );
-                }
-            }
-
-            // TODO: move to new table
-            // TODO: allocate entity on new archetype
-            // TODO: write component data to the new table
+    pub fn add_component<T: 'static>(&mut self, entity: Entity, component: T) {
+        let component_info = self
+            .components_info
+            .get_by_type_id(TypeId::of::<T>())
+            .unwrap();
+        if let Some(component_sparse_set) = self.components.get_mut(component_info.id()) {
+            component_sparse_set.insert(entity, component);
         }
     }
 
-    pub fn get_component<T: Any>(&self, entity: Entity) -> Option<&T> {
-        let entity_meta = self.entities.get(entity).unwrap();
-        let component_id = TypeId::of::<T>();
-
-        let archetype_set = self.archetypes.get_archetype_sets(component_id).unwrap();
-
-        if !archetype_set.contains(&entity_meta.archetype_id) {
-            return None;
+    pub fn remove_component<T: 'static>(&mut self, entity: Entity) {
+        let component_info = self
+            .components_info
+            .get_by_type_id(TypeId::of::<T>())
+            .unwrap();
+        if let Some(component_sparse_set) = self.components.get_mut(component_info.id()) {
+            component_sparse_set.remove_entity(entity);
         }
-
-        if let Some(archetype) = self.archetypes.get(entity_meta.archetype_id) {
-            return archetype
-                .components
-                .get_column(component_id)
-                .and_then(|column| column.get::<T>(entity_meta.table_row));
-        }
-
-        None
     }
-}
-
-pub(crate) fn insert_bundle_into_archetype(
-    component_id: ComponentId,
-    archetypes: &mut Archetypes,
-    // components: &Components,
-    current_archetype_id: ArchetypeId,
-) -> ArchetypeId {
-    if let Some(add_edge) = archetypes[current_archetype_id]
-        .edges()
-        .get(&component_id)
-        .and_then(|e| e.add)
-    {
-        return add_edge;
-    }
-
-    todo!()
 }
 
 #[cfg(test)]
@@ -209,10 +133,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_entity_with_components() {
-        let mut world = World::new();
+    // #[test]
+    // fn test_entity_with_components() {
 
-        let entity_builder = world.create_entity();
-    }
+    //     let mut world = World::new();
+
+    //     let entity_builder = world.create_entity();
+    // }
 }

@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct GenerationalIndex {
     index: usize,
     generation: u64,
@@ -7,6 +7,13 @@ pub struct GenerationalIndex {
 impl GenerationalIndex {
     pub fn index(&self) -> usize {
         self.index
+    }
+
+    pub fn from_raw(index: usize) -> Self {
+        Self {
+            index,
+            generation: u64::MIN,
+        }
     }
 }
 
