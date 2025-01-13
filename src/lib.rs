@@ -6,12 +6,13 @@ use winit::{
     window::{Window, WindowId},
 };
 
+pub use ecs::scheduler::Scheduler;
 pub use ecs::world::World;
 
 mod anymap;
 mod buffers;
 mod camera_uniform;
-mod ecs;
+pub mod ecs;
 mod egui_renderer;
 pub mod orthographic_camera;
 pub mod renderer;

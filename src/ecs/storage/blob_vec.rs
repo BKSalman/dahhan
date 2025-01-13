@@ -85,7 +85,6 @@ impl BlobVec {
         }
 
         let bytes_len = len * self.item_layout.size();
-        eprintln!("len: {bytes_len}");
         if index >= len {
             assert_failed(index, len);
         }
@@ -104,6 +103,24 @@ impl BlobVec {
 
     pub fn capacity(&self) -> usize {
         self.data.capacity()
+    }
+
+    pub unsafe fn iter<'a, T>(&'a self) -> std::slice::Iter<'a, T> {
+        // TODO: Check if `T` has the same type id
+        assert!(Layout::new::<T>() == self.item_layout);
+
+        let vec = unsafe { std::mem::transmute::<_, &Vec<T>>(&self.data) };
+
+        vec.iter()
+    }
+
+    pub unsafe fn iter_mut<'a, T>(&'a mut self) -> std::slice::IterMut<'a, T> {
+        // TODO: Check if `T` has the same type id
+        assert!(Layout::new::<T>() == self.item_layout);
+
+        let vec = unsafe { std::mem::transmute::<_, &mut Vec<T>>(&mut self.data) };
+
+        vec.iter_mut()
     }
 }
 

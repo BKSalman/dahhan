@@ -6,9 +6,11 @@ use std::{
 use crate::anymap::AnyMap;
 
 use super::{
-    component::{Components, ComponentsInfo},
+    component::{Component, Components, ComponentsInfo, TupleAddComponent},
     entity::Entity,
     generational_array::GenerationalIndexAllocator,
+    scheduler::Scheduler,
+    Query, WorldQueryable,
 };
 
 pub struct World {
@@ -17,6 +19,7 @@ pub struct World {
     components_info: ComponentsInfo,
     components: Components,
     resources: AnyMap,
+    scheduler: Scheduler,
 }
 
 impl World {
@@ -27,6 +30,7 @@ impl World {
             components_info: ComponentsInfo::new(),
             entity_allocator: GenerationalIndexAllocator::new(),
             entities: Vec::new(),
+            scheduler: Scheduler::new(),
         }
     }
 
@@ -58,30 +62,22 @@ impl World {
         Ok(resource.write().unwrap())
     }
 
-    pub fn register_component<T: 'static>(&mut self) {
+    pub fn register_component<T: Component>(&mut self) {
         let component_id = self.components_info.register_component::<T>();
         self.components.register_component::<T>(component_id);
     }
 
-    // FIXME: this should NOT use a Box, that's very bad
-    pub fn add_entity(&mut self, components: Vec<Box<dyn Any>>) -> Entity {
+    pub fn add_entity<T: TupleAddComponent>(&mut self, components: T) -> Entity {
         let entity = self.entity_allocator.allocate();
         let entity = Entity::from(entity);
         self.entities.push(entity);
 
-        for component in components {
-            let component_info = self
-                .components_info
-                .get_by_type_id(component.type_id())
-                .unwrap();
-            self.components
-                .insert_component(entity, component_info.id(), component);
-        }
+        components.add_component(&self.components_info, &mut self.components, entity);
 
         entity
     }
 
-    pub fn add_component<T: 'static>(&mut self, entity: Entity, component: T) {
+    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
         let component_info = self
             .components_info
             .get_by_type_id(TypeId::of::<T>())
@@ -91,7 +87,7 @@ impl World {
         }
     }
 
-    pub fn remove_component<T: 'static>(&mut self, entity: Entity) {
+    pub fn remove_component<T: Component>(&mut self, entity: Entity) {
         let component_info = self
             .components_info
             .get_by_type_id(TypeId::of::<T>())
@@ -99,6 +95,21 @@ impl World {
         if let Some(component_sparse_set) = self.components.get_mut(component_info.id()) {
             component_sparse_set.remove_entity(entity);
         }
+    }
+
+    pub fn iter_component<'a, T: Component>(&'a self) -> std::slice::Iter<'a, T> {
+        let component_info = self
+            .components_info
+            .get_by_type_id(TypeId::of::<T>())
+            .unwrap();
+        self.components
+            .get(component_info.id())
+            .map(|component_sparse_set| component_sparse_set.iter())
+            .unwrap_or([].iter())
+    }
+
+    pub fn query<'a, T: WorldQueryable>(&'a self) -> <T as WorldQueryable>::Item<'a> {
+        T::query(&self.components_info, &self.components)
     }
 }
 

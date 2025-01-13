@@ -53,6 +53,10 @@ impl ComponentSparseSet {
         }
     }
 
+    pub fn get_dense<T>(&self, dense_index: usize) -> Option<&T> {
+        unsafe { self.dense.get(dense_index) }
+    }
+
     pub fn remove_entity(&mut self, entity: Entity) {
         if let Some(dense_index) = self.sparse.remove(entity) {
             unsafe {
@@ -60,9 +64,16 @@ impl ComponentSparseSet {
             }
             self.entities.swap_remove(dense_index);
             let swapped_entity = self.entities[dense_index];
-            eprintln!("swapped_entity: {swapped_entity:?}");
             self.sparse.insert(swapped_entity, dense_index);
         }
+    }
+
+    pub fn iter<'a, T>(&'a self) -> std::slice::Iter<'a, T> {
+        unsafe { self.dense.iter() }
+    }
+
+    pub fn iter_mut<'a, T>(&'a mut self) -> std::slice::IterMut<'a, T> {
+        unsafe { self.dense.iter_mut() }
     }
 }
 
@@ -98,7 +109,7 @@ impl Components {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ComponentInfo {
     id: ComponentId,
     // TODO: maybe add type name and other stuff
@@ -110,6 +121,7 @@ impl ComponentInfo {
     }
 }
 
+#[derive(Debug)]
 pub struct ComponentsInfo {
     components: Vec<ComponentInfo>,
     indices: HashMap<TypeId, ComponentId>,
@@ -125,7 +137,7 @@ impl ComponentsInfo {
 
     pub fn register_component<T: 'static>(&mut self) -> ComponentId {
         let type_id = TypeId::of::<T>();
-        let component_id = ComponentId((self.components.len() - 1) as u32);
+        let component_id = ComponentId((self.components.len()) as u32);
         let component_info = ComponentInfo { id: component_id };
         self.components.push(component_info);
         self.indices.insert(type_id, component_id);
@@ -134,15 +146,86 @@ impl ComponentsInfo {
     }
 
     pub fn get<T: 'static>(&self) -> Option<ComponentInfo> {
-        self.indices
-            .get(&TypeId::of::<T>())
-            .map(|index| self.components[index.sparse_index()].clone())
+        self.get_by_type_id(TypeId::of::<T>())
     }
 
     pub fn get_by_type_id(&self, type_id: TypeId) -> Option<ComponentInfo> {
         self.indices
             .get(&type_id)
             .map(|index| self.components[index.sparse_index()].clone())
+    }
+}
+
+pub trait Component: 'static {}
+
+pub trait TupleAddComponent {
+    fn add_component(
+        self,
+        components_info: &ComponentsInfo,
+        components: &mut Components,
+        entity: Entity,
+    );
+}
+
+impl TupleAddComponent for () {
+    fn add_component(
+        self,
+        components_info: &ComponentsInfo,
+        components: &mut Components,
+        entity: Entity,
+    ) {
+        let _ = components_info;
+        let _ = components;
+        let _ = entity;
+    }
+}
+
+impl<T: Component> TupleAddComponent for T {
+    fn add_component(
+        self,
+        components_info: &ComponentsInfo,
+        components: &mut Components,
+        entity: Entity,
+    ) {
+        let component_info = components_info.get::<T>().unwrap();
+        components.insert_component(entity, component_info.id(), self);
+    }
+}
+
+impl<T1: Component> TupleAddComponent for (T1,) {
+    fn add_component(
+        self,
+        components_info: &ComponentsInfo,
+        components: &mut Components,
+        entity: Entity,
+    ) {
+        let component_info = components_info.get::<T1>().unwrap();
+        components.insert_component(entity, component_info.id(), self);
+    }
+}
+
+impl<T1: Component, T2: Component> TupleAddComponent for (T1, T2) {
+    fn add_component(
+        self,
+        components_info: &ComponentsInfo,
+        components: &mut Components,
+        entity: Entity,
+    ) {
+        self.0.add_component(components_info, components, entity);
+        self.1.add_component(components_info, components, entity);
+    }
+}
+
+impl<T1: Component, T2: Component, T3: Component> TupleAddComponent for (T1, T2, T3) {
+    fn add_component(
+        self,
+        components_info: &ComponentsInfo,
+        components: &mut Components,
+        entity: Entity,
+    ) {
+        self.0.add_component(components_info, components, entity);
+        self.1.add_component(components_info, components, entity);
+        self.2.add_component(components_info, components, entity);
     }
 }
 
