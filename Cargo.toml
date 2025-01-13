@@ -17,3 +17,10 @@ rustc-hash = "2.1.0"
 tracing = "0.1.41"
 wgpu = "23.0.1"
 winit = "0.30.5"
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "query_benchmark"
+harness = false
