@@ -1,6 +1,7 @@
 use std::hash::Hash;
 use std::marker::PhantomData;
 
+#[derive(Debug)]
 pub struct SparseSet<I, V> {
     sparse: SparseArray<I, usize>,
     dense: Vec<V>,

@@ -50,10 +50,9 @@
               (rust-bin.stable.latest.default.override {
                 extensions = [ "rust-src" "rust-analyzer" ];
               })
-              (rust-bin.nightly.latest.default.override {
-                extensions = [ "rust-src" "rust-std" "miri" ];
-              })
               cargo-watch
+              gdb
+              renderdoc
             ];
 
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";

@@ -21,6 +21,12 @@ impl SparseIndex for ComponentId {
     }
 }
 
+pub trait ComponentStorage {
+    type Out;
+
+    fn get_data(&self, index: Entity) -> Option<Self::Out>;
+}
+
 // sparse: []
 // dense: []
 //
@@ -53,6 +59,12 @@ impl ComponentSparseSet {
         }
     }
 
+    pub fn get<T>(&self, entity: Entity) -> Option<&T> {
+        let dense_index = self.sparse.get(entity)?;
+        eprintln!("dense index: {dense_index}");
+        unsafe { self.dense.get(*dense_index) }
+    }
+
     pub fn get_dense<T>(&self, dense_index: usize) -> Option<&T> {
         unsafe { self.dense.get(dense_index) }
     }
@@ -75,8 +87,18 @@ impl ComponentSparseSet {
     pub fn iter_mut<'a, T>(&'a mut self) -> std::slice::IterMut<'a, T> {
         unsafe { self.dense.iter_mut() }
     }
+
+    /// Returns the how many entities have this component
+    pub fn len(&self) -> usize {
+        self.entities.len()
+    }
+
+    pub fn entities(&self) -> Vec<Entity> {
+        self.entities.iter().copied().collect()
+    }
 }
 
+#[cfg_attr(test, derive(Debug))]
 pub struct Components {
     components: SparseSet<ComponentId, ComponentSparseSet>,
 }
@@ -106,6 +128,12 @@ impl Components {
             .get_mut(component_id)
             .unwrap()
             .insert(entity, component);
+    }
+
+    pub fn has_component<T>(&self, component_id: ComponentId, entity: Entity) -> bool {
+        self.components
+            .get(component_id)
+            .is_some_and(|c| c.entities.contains(&entity))
     }
 }
 

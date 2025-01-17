@@ -2,6 +2,7 @@ use std::any::{Any, TypeId};
 
 use rustc_hash::FxHashMap;
 
+#[cfg_attr(test, derive(Debug))]
 pub struct AnyMap {
     map: FxHashMap<TypeId, Box<dyn Any + 'static>>,
 }

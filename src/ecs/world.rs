@@ -111,6 +111,10 @@ impl World {
     pub fn query<'a, T: WorldQueryable>(&'a self) -> <T as WorldQueryable>::Item<'a> {
         T::query(&self.components_info, &self.components)
     }
+
+    pub(crate) fn components(&self) -> &Components {
+        &self.components
+    }
 }
 
 #[cfg(test)]

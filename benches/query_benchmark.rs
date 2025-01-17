@@ -16,7 +16,7 @@ fn iterate_component() {
         world.add_entity(Something(i));
     }
 
-    let components: Vec<&Something> = world.query::<Query<Something>>().collect();
+    let components: Vec<&Something> = world.query::<&Something>().collect();
 }
 
 fn iterate_vec() {
