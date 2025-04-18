@@ -97,7 +97,7 @@ impl Renderer {
 
         let mut camera_uniform = CameraUniform::new();
         let view_projection_matrix = &camera.build_view_projection_matrix();
-        camera_uniform.update_view_proj(&view_projection_matrix);
+        camera_uniform.update_view_proj(view_projection_matrix);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),

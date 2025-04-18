@@ -34,6 +34,7 @@ pub trait ComponentStorage {
 //
 // sparse: [None, None, None, None, None, Some(0)]
 // dense: [FirstComponent(10)]
+/// A set that holds a single type of component for multiple entities
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ComponentSparseSet {
@@ -61,8 +62,14 @@ impl ComponentSparseSet {
 
     pub fn get<T>(&self, entity: Entity) -> Option<&T> {
         let dense_index = self.sparse.get(entity)?;
-        eprintln!("dense index: {dense_index}");
+        // eprintln!("dense index: {dense_index}");
         unsafe { self.dense.get(*dense_index) }
+    }
+
+    pub fn get_mut<T>(&mut self, entity: Entity) -> Option<&mut T> {
+        let dense_index = self.sparse.get(entity)?;
+        // eprintln!("dense index: {dense_index}");
+        unsafe { self.dense.get_mut(*dense_index) }
     }
 
     pub fn get_dense<T>(&self, dense_index: usize) -> Option<&T> {
@@ -80,11 +87,11 @@ impl ComponentSparseSet {
         }
     }
 
-    pub fn iter<'a, T>(&'a self) -> std::slice::Iter<'a, T> {
+    pub fn iter<T>(&self) -> std::slice::Iter<'_, T> {
         unsafe { self.dense.iter() }
     }
 
-    pub fn iter_mut<'a, T>(&'a mut self) -> std::slice::IterMut<'a, T> {
+    pub fn iter_mut<T>(&mut self) -> std::slice::IterMut<'_, T> {
         unsafe { self.dense.iter_mut() }
     }
 
@@ -93,8 +100,12 @@ impl ComponentSparseSet {
         self.entities.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.entities.len() == 0
+    }
+
     pub fn entities(&self) -> Vec<Entity> {
-        self.entities.iter().copied().collect()
+        self.entities.to_vec()
     }
 }
 
@@ -130,10 +141,17 @@ impl Components {
             .insert(entity, component);
     }
 
-    pub fn has_component<T>(&self, component_id: ComponentId, entity: Entity) -> bool {
+    pub fn has_component(&self, component_id: ComponentId, entity: Entity) -> bool {
         self.components
             .get(component_id)
             .is_some_and(|c| c.entities.contains(&entity))
+    }
+
+    pub fn entities(&self, component_id: ComponentId) -> Vec<Entity> {
+        self.components
+            .get(component_id)
+            .map(|c| c.entities.clone())
+            .unwrap_or_default()
     }
 }
 

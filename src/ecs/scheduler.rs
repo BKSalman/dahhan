@@ -2,8 +2,6 @@ use std::marker::PhantomData;
 
 use crate::World;
 
-use super::WorldQueryable;
-
 type StoredSystem = Box<dyn System>;
 
 pub struct Scheduler {
@@ -26,6 +24,12 @@ impl Scheduler {
     pub fn add_system<I, S: System + 'static>(&mut self, system: impl IntoSystem<I, System = S>) {
         self.systems.push(Box::new(system.into_system()));
     }
+}
+
+pub trait SystemParam {
+    type Item<'w>;
+
+    fn fetch(world: &mut World) -> Self::Item<'_>;
 }
 
 pub trait System {
@@ -51,15 +55,15 @@ impl<F: FnMut()> System for FunctionSystem<(), F> {
     }
 }
 
-impl<F, T: WorldQueryable> System for FunctionSystem<(T,), F>
+impl<F, T: SystemParam> System for FunctionSystem<(T,), F>
 where
-    for<'a, 'b> &'a mut F: FnMut(T) + FnMut(<T as WorldQueryable>::Item<'b>),
+    for<'a, 'b> &'a mut F: FnMut(T) + FnMut(<T as SystemParam>::Item<'b>),
 {
     fn run(&mut self, world: &mut World) {
         fn call_inner<T>(mut f: impl FnMut(T), _0: T) {
             f(_0)
         }
-        let stuff = world.query::<T>();
+        let stuff = T::fetch(world);
         call_inner(&mut self.f, stuff);
     }
 }
@@ -92,9 +96,9 @@ impl<F: FnMut()> IntoSystem<()> for F {
     }
 }
 
-impl<F: FnMut(T), T: WorldQueryable> IntoSystem<(T,)> for F
+impl<F: FnMut(T), T: SystemParam> IntoSystem<(T,)> for F
 where
-    for<'a, 'b> &'a mut F: FnMut(T) + FnMut(<T as WorldQueryable>::Item<'b>),
+    for<'a, 'b> &'a mut F: FnMut(T) + FnMut(<T as SystemParam>::Item<'b>),
 {
     type System = FunctionSystem<(T,), Self>;
 
@@ -106,36 +110,60 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::ecs::{component::Component, Query};
+#[cfg(test)]
+mod tests {
+    use crate::ecs::{
+        component::Component,
+        query::{Query, Read},
+    };
 
-//     use super::*;
+    use super::*;
 
-//     #[derive(Debug)]
-//     struct SomeComponent(u32);
+    #[derive(Debug)]
+    struct SomeComponent(u32);
 
-//     impl Component for SomeComponent {}
+    impl Component for SomeComponent {}
 
-//     fn something(lmao: Query<&SomeComponent>) {
-//         for (i, component) in lmao.enumerate() {
-//             assert_eq!(component.0, i as u32);
-//         }
-//     }
+    fn something(lmao: Query<Read<SomeComponent>>) {
+        assert!(lmao.iter().count() == 10);
+    }
 
-//     #[test]
-//     fn test_systems() {
-//         let mut world = World::new();
-//         let mut scheduler = Scheduler::new();
+    fn something_else(lmao: Query<Read<SomeComponent>>) {
+        for (i, (_e, component)) in lmao.iter().enumerate() {
+            assert_eq!(component.0, i as u32);
+        }
+    }
 
-//         world.register_component::<SomeComponent>();
+    fn panic() {
+        panic!("hello");
+    }
 
-//         for i in 0..10 {
-//             world.add_entity(SomeComponent(i));
-//         }
+    #[test]
+    #[should_panic]
+    fn test_systems_work() {
+        let mut world = World::new();
+        let mut scheduler = Scheduler::new();
 
-//         scheduler.add_system(something);
+        scheduler.add_system(panic);
 
-//         scheduler.run(&mut world);
-//     }
-// }
+        scheduler.run(&mut world);
+    }
+
+    #[test]
+    fn test_systems_query_component() {
+        let mut world = World::new();
+        let mut scheduler = Scheduler::new();
+
+        world.register_component::<SomeComponent>();
+
+        for i in 0..10 {
+            world.add_entity(SomeComponent(i));
+        }
+
+        scheduler.add_system(something);
+
+        scheduler.add_system(something_else);
+
+        scheduler.run(&mut world);
+    }
+}

@@ -26,10 +26,10 @@ impl EguiRenderer {
         let egui_context = Context::default();
         let id = egui_context.viewport_id();
 
-        const BORDER_RADIUS: f32 = 2.0;
+        const BORDER_RADIUS: u8 = 2;
 
         let visuals = Visuals {
-            window_rounding: egui::Rounding::same(BORDER_RADIUS),
+            window_corner_radius: egui::CornerRadius::same(BORDER_RADIUS),
             window_shadow: Shadow::NONE,
             // menu_rounding: todo!(),
             ..Default::default()
@@ -70,27 +70,27 @@ impl EguiRenderer {
         mut run_ui: impl FnMut(&Context),
     ) {
         // self.state.set_pixels_per_point(window.scale_factor() as f32);
-        let raw_input = self.state.take_egui_input(&window);
+        let raw_input = self.state.take_egui_input(window);
         let full_output = self.context.run(raw_input, |context| {
             run_ui(context);
         });
 
         self.state
-            .handle_platform_output(&window, full_output.platform_output);
+            .handle_platform_output(window, full_output.platform_output);
 
         let tris = self
             .context
             .tessellate(full_output.shapes, full_output.pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
             self.renderer
-                .update_texture(&device, &queue, *id, &image_delta);
+                .update_texture(device, queue, *id, image_delta);
         }
         self.renderer
-            .update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
+            .update_buffers(device, queue, encoder, &tris, &screen_descriptor);
         let mut rpass = encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &window_surface_view,
+                    view: window_surface_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -106,7 +106,7 @@ impl EguiRenderer {
         self.renderer.render(&mut rpass, &tris, &screen_descriptor);
         drop(rpass);
         for x in &full_output.textures_delta.free {
-            self.renderer.free_texture(x)
+            self.renderer.free_texture(x);
         }
     }
 }

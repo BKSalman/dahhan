@@ -1,3 +1,10 @@
+use ecs::{
+    component::TupleAddComponent,
+    entity::Entity,
+    scheduler::{IntoSystem, System},
+    world::World,
+    Component,
+};
 use renderer::Renderer;
 use std::{sync::Arc, time::Instant};
 use winit::{
@@ -7,7 +14,6 @@ use winit::{
 };
 
 pub use ecs::scheduler::Scheduler;
-pub use ecs::world::World;
 
 mod anymap;
 mod buffers;
@@ -29,7 +35,6 @@ pub(crate) const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::Mat4::from_cols_array
 pub struct App {
     state: State,
     event_loop: EventLoop<()>,
-    world: World,
 }
 
 impl App {
@@ -39,15 +44,35 @@ impl App {
 
         let state = State::new();
 
-        Self {
-            event_loop,
-            state,
-            world: World::new(),
-        }
+        Self { event_loop, state }
     }
 
     pub fn run(mut self) -> Result<(), winit::error::EventLoopError> {
         self.event_loop.run_app(&mut self.state)
+    }
+
+    pub fn insert_resource<T: 'static>(&mut self, resource: T) {
+        self.state.world.insert_resource(resource);
+    }
+
+    pub fn register_component<T: Component>(&mut self) {
+        self.state.world.register_component::<T>();
+    }
+
+    pub fn add_entity<T: TupleAddComponent>(&mut self, components: T) -> Entity {
+        self.state.world.add_entity(components)
+    }
+
+    pub fn add_component<T: Component>(&mut self, entity: Entity, component: T) {
+        self.state.world.add_component(entity, component);
+    }
+
+    pub fn remove_component<T: Component>(&mut self, entity: Entity) {
+        self.state.world.remove_component::<T>(entity);
+    }
+
+    pub fn add_system<I, S: System + 'static>(&mut self, system: impl IntoSystem<I, System = S>) {
+        self.state.scheduler.add_system(system);
     }
 }
 
@@ -56,6 +81,8 @@ struct State {
     window_id: Option<WindowId>,
     renderer: Option<Renderer>,
     last_frame_time: Instant,
+    world: World,
+    scheduler: Scheduler,
 }
 
 impl State {
@@ -65,6 +92,8 @@ impl State {
             window_id: None,
             renderer: None,
             last_frame_time: Instant::now(),
+            world: World::new(),
+            scheduler: Scheduler::new(),
         }
     }
 }
@@ -104,6 +133,7 @@ impl winit::application::ApplicationHandler for State {
                     renderer.resize(new_size);
                 }
                 WindowEvent::RedrawRequested => {
+                    self.scheduler.run(&mut self.world);
                     renderer.update();
                     renderer.draw(|ctx| {}, wgpu::Color::BLACK);
                     self.last_frame_time = Instant::now();

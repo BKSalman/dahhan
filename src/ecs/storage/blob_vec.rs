@@ -18,9 +18,15 @@ impl BlobVec {
     pub fn new<T>() -> Self {
         Self {
             item_layout: Layout::new::<T>(),
-            data: unsafe { ManuallyDrop::new(std::mem::transmute(Vec::<T>::new())) },
+            data: unsafe {
+                ManuallyDrop::new(std::mem::transmute::<std::vec::Vec<T>, std::vec::Vec<u8>>(
+                    Vec::<T>::new(),
+                ))
+            },
             drop_fn: unsafe {
-                std::mem::transmute(std::ptr::drop_in_place::<Vec<T>> as unsafe fn(*mut Vec<T>))
+                std::mem::transmute::<unsafe fn(*mut std::vec::Vec<T>), fn(*mut ())>(
+                    std::ptr::drop_in_place::<Vec<T>> as unsafe fn(*mut Vec<T>),
+                )
             },
         }
     }
@@ -101,24 +107,37 @@ impl BlobVec {
         self.data.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.len() == 0
+    }
+
     pub fn capacity(&self) -> usize {
         self.data.capacity()
     }
 
-    pub unsafe fn iter<'a, T>(&'a self) -> std::slice::Iter<'a, T> {
+    pub unsafe fn iter<T>(&self) -> std::slice::Iter<'_, T> {
         // TODO: Check if `T` has the same type id
         assert!(Layout::new::<T>() == self.item_layout);
 
-        let vec = unsafe { std::mem::transmute::<_, &Vec<T>>(&self.data) };
+        let vec = unsafe {
+            std::mem::transmute::<&std::mem::ManuallyDrop<std::vec::Vec<u8>>, &std::vec::Vec<T>>(
+                &self.data,
+            )
+        };
 
         vec.iter()
     }
 
-    pub unsafe fn iter_mut<'a, T>(&'a mut self) -> std::slice::IterMut<'a, T> {
+    pub unsafe fn iter_mut<T>(&mut self) -> std::slice::IterMut<'_, T> {
         // TODO: Check if `T` has the same type id
         assert!(Layout::new::<T>() == self.item_layout);
 
-        let vec = unsafe { std::mem::transmute::<_, &mut Vec<T>>(&mut self.data) };
+        let vec = unsafe {
+            std::mem::transmute::<
+                &mut std::mem::ManuallyDrop<std::vec::Vec<u8>>,
+                &mut std::vec::Vec<T>,
+            >(&mut self.data)
+        };
 
         vec.iter_mut()
     }

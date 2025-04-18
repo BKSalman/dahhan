@@ -9,28 +9,25 @@ use super::{
     component::{Component, Components, ComponentsInfo, TupleAddComponent},
     entity::Entity,
     generational_array::GenerationalIndexAllocator,
-    scheduler::Scheduler,
-    Query, WorldQueryable,
+    query::{ComponentAccessor, Query},
 };
 
 pub struct World {
     entity_allocator: GenerationalIndexAllocator,
     entities: Vec<Entity>,
-    components_info: ComponentsInfo,
-    components: Components,
+    pub(crate) components_info: ComponentsInfo,
+    pub(crate) components: Components,
     resources: AnyMap,
-    scheduler: Scheduler,
 }
 
 impl World {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             resources: AnyMap::new(),
             components: Components::new(),
             components_info: ComponentsInfo::new(),
             entity_allocator: GenerationalIndexAllocator::new(),
             entities: Vec::new(),
-            scheduler: Scheduler::new(),
         }
     }
 
@@ -97,7 +94,7 @@ impl World {
         }
     }
 
-    pub fn iter_component<'a, T: Component>(&'a self) -> std::slice::Iter<'a, T> {
+    pub fn iter_component<T: Component>(&self) -> std::slice::Iter<'_, T> {
         let component_info = self
             .components_info
             .get_by_type_id(TypeId::of::<T>())
@@ -108,12 +105,9 @@ impl World {
             .unwrap_or([].iter())
     }
 
-    pub fn query<'a, T: WorldQueryable>(&'a self) -> <T as WorldQueryable>::Item<'a> {
-        T::query(&self.components_info, &self.components)
-    }
-
-    pub(crate) fn components(&self) -> &Components {
-        &self.components
+    pub fn query<T: ComponentAccessor>(&mut self) -> Query<'_, T> {
+        let entities = T::entities(self);
+        Query::new(self, entities)
     }
 }
 
