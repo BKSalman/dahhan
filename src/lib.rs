@@ -1,7 +1,9 @@
 use ecs::{
     component::TupleAddComponent,
+    default_systems::{draw, sprite_render},
     entity::Entity,
-    scheduler::{IntoSystem, System},
+    rendering::{Sprite, Transform},
+    scheduler::{IntoSystem, Scheduler, System},
     world::World,
     Component,
 };
@@ -13,8 +15,6 @@ use winit::{
     window::{Window, WindowId},
 };
 
-pub use ecs::scheduler::Scheduler;
-
 mod anymap;
 mod buffers;
 mod camera_uniform;
@@ -23,6 +23,14 @@ mod egui_renderer;
 pub mod orthographic_camera;
 pub mod renderer;
 mod vertices;
+
+pub mod prelude {
+    pub use crate::ecs::{
+        query::{Query, Read},
+        rendering::{Sprite, Transform},
+        scheduler::{Res, ResMut, Scheduler},
+    };
+}
 
 #[rustfmt::skip]
 pub(crate) const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::Mat4::from_cols_array(&[
@@ -79,7 +87,6 @@ impl App {
 struct State {
     window: Option<Arc<Window>>,
     window_id: Option<WindowId>,
-    renderer: Option<Renderer>,
     last_frame_time: Instant,
     world: World,
     scheduler: Scheduler,
@@ -87,14 +94,25 @@ struct State {
 
 impl State {
     fn new() -> Self {
+        let mut world = World::new();
+
+        world.register_component::<Transform>();
+        world.register_component::<Sprite>();
+
         Self {
             window: None,
             window_id: None,
-            renderer: None,
             last_frame_time: Instant::now(),
-            world: World::new(),
+            world,
             scheduler: Scheduler::new(),
         }
+    }
+
+    pub fn init_rendering(&mut self, renderer: Renderer) {
+        self.world.insert_resource(renderer);
+
+        self.scheduler.add_system(sprite_render);
+        self.scheduler.add_system(draw);
     }
 }
 
@@ -108,7 +126,10 @@ impl winit::application::ApplicationHandler for State {
         let window = event_loop.create_window(window_attributes).unwrap();
         let window = Arc::new(window);
 
-        self.renderer = Some(Renderer::new(Arc::clone(&window)));
+        let renderer = Renderer::new(Arc::clone(&window));
+        self.init_rendering(renderer);
+
+        // self.renderer = Some();
         self.window_id = Some(window.id());
         self.window = Some(window);
     }
@@ -119,30 +140,34 @@ impl winit::application::ApplicationHandler for State {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let (Some(window), Some(renderer)) = (self.window.as_ref(), self.renderer.as_mut()) else {
+        let Some(window) = self.window.as_ref() else {
             return;
         };
 
         window.request_redraw();
 
-        let event_res = renderer.handle_egui_event(&event);
+        // let event_res = {
+        //     let mut renderer = self.world.write_resource::<Renderer>().unwrap();
+        //     renderer.handle_egui_event(&event)
+        // };
 
-        if !event_res.consumed {
-            match event {
-                WindowEvent::Resized(new_size) => {
-                    renderer.resize(new_size);
-                }
-                WindowEvent::RedrawRequested => {
-                    self.scheduler.run(&mut self.world);
-                    renderer.update();
-                    renderer.draw(|ctx| {}, wgpu::Color::BLACK);
-                    self.last_frame_time = Instant::now();
-                }
+        // if !event_res.consumed {
+        match event {
+            WindowEvent::Resized(new_size) => {
+                let mut renderer = self.world.write_resource::<Renderer>().unwrap();
+                renderer.resize(new_size);
+            }
+            WindowEvent::RedrawRequested => {
+                self.scheduler.run(&mut self.world);
+                // let mut renderer = self.world.write_resource::<Renderer>().unwrap();
+                // renderer.draw(|ctx| {}, wgpu::Color::BLACK);
+                self.last_frame_time = Instant::now();
+            }
 
-                WindowEvent::CloseRequested => event_loop.exit(),
-                _ => {}
-            };
-        }
+            WindowEvent::CloseRequested => event_loop.exit(),
+            _ => {}
+        };
+        // }
     }
 
     fn new_events(&mut self, _event_loop: &ActiveEventLoop, cause: StartCause) {

@@ -7,7 +7,7 @@ use wgpu::{BufferSize, BufferSlice, Queue, QueueWriteBufferView};
 
 #[derive(Debug)]
 pub struct SlicedBuffer {
-    buffer: wgpu::Buffer,
+    pub buffer: wgpu::Buffer,
     slices: Vec<Range<usize>>,
     capacity: wgpu::BufferAddress,
 }

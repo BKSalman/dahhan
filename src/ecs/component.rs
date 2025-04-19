@@ -277,10 +277,19 @@ impl<T1: Component, T2: Component, T3: Component> TupleAddComponent for (T1, T2,
 
 #[cfg(test)]
 mod tests {
+    use crate::{ecs::world::World, App, State};
+
     use super::*;
 
     #[allow(unused)]
     struct SomeComponent(u32);
+
+    impl Component for SomeComponent {}
+
+    #[allow(unused)]
+    struct SomeOtherComponent(u32);
+
+    impl Component for SomeOtherComponent {}
 
     #[test]
     fn test_component_sparse_set_insert() {
@@ -384,5 +393,54 @@ mod tests {
         };
 
         assert_eq!(component, expected);
+    }
+
+    #[test]
+    fn test_spawn_with_components() {
+        let mut state = State::new();
+
+        state.world.register_component::<SomeComponent>();
+
+        state.world.register_component::<SomeOtherComponent>();
+
+        let _entity = state
+            .world
+            .add_entity((SomeComponent(10), SomeOtherComponent(10)));
+
+        let c_info = state.world.components_info.get::<SomeComponent>().unwrap();
+
+        assert!(state.world.components.get(c_info.id()).is_some());
+
+        assert!(!state
+            .world
+            .components
+            .get(c_info.id())
+            .unwrap()
+            .entities
+            .is_empty());
+
+        assert!(!state
+            .world
+            .components
+            .get(c_info.id())
+            .unwrap()
+            .entities
+            .is_empty());
+
+        let c_info = state
+            .world
+            .components_info
+            .get::<SomeOtherComponent>()
+            .unwrap();
+
+        assert!(state.world.components.get(c_info.id()).is_some());
+
+        assert!(!state
+            .world
+            .components
+            .get(c_info.id())
+            .unwrap()
+            .entities
+            .is_empty());
     }
 }

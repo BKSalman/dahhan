@@ -1,31 +1,37 @@
 use dahhan::{
-    ecs::{
-        query::{Query, Read},
-        Component,
-    },
+    prelude::{Sprite, Transform},
     App,
 };
-
-#[derive(Debug)]
-struct Health(u32);
-
-impl Component for Health {}
-
-fn print_healths(healths: Query<Read<Health>>) {
-    for (e, health) in healths.iter() {
-        println!("{e:?}: {health:?}");
-    }
-}
+use glam::{Vec2, Vec3};
 
 pub fn main() {
     let mut app = App::new();
 
-    app.register_component::<Health>();
+    app.add_entity((
+        Sprite {
+            texture_id: None,
+            size: Vec2::splat(10.),
+            color: Vec3::new(0., 1., 1.),
+        },
+        Transform {
+            position: Vec3::new(200., 200., 0.),
+            rotation: 0.,
+            scale: Vec2::splat(1.),
+        },
+    ));
 
-    let entity = app.add_entity(Health(10));
-    println!("Added {entity:?}");
-
-    app.add_system(print_healths);
+    app.add_entity((
+        Sprite {
+            texture_id: None,
+            size: Vec2::splat(20.),
+            color: Vec3::new(0., 1., 1.),
+        },
+        Transform {
+            position: Vec3::new(500., 500., 0.),
+            rotation: 0.,
+            scale: Vec2::splat(1.),
+        },
+    ));
 
     app.run().unwrap();
 }

@@ -1,4 +1,8 @@
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    sync::{RwLockReadGuard, RwLockWriteGuard},
+};
 
 use crate::World;
 
@@ -68,6 +72,46 @@ where
     }
 }
 
+impl<F, T1: SystemParam, T2: SystemParam> System for FunctionSystem<(T1, T2), F>
+where
+    // for any two arbitrary lifetimes, a mutable reference to F with lifetime 'a
+    // implements FnMut taking parameters of lifetime 'b
+    for<'a, 'b> &'a mut F:
+        FnMut(T1, T2) + FnMut(<T1 as SystemParam>::Item<'b>, <T2 as SystemParam>::Item<'b>),
+{
+    fn run(&mut self, world: &mut World) {
+        fn call_inner<T1, T2>(mut f: impl FnMut(T1, T2), _0: T1, _1: T2) {
+            f(_0, _1)
+        }
+
+        // SAFETY: We're creating two mutable references to world, but we ensure
+        // they're used in a non-overlapping way. Each parameter fetch accesses
+        // different parts of the world, and we don't reuse the pointers after
+        // the function call.
+        unsafe {
+            let world_ptr = world as *mut World;
+            let param1 = T1::fetch(&mut *world_ptr);
+            let param2 = T2::fetch(&mut *world_ptr);
+            call_inner(&mut self.f, param1, param2);
+        }
+    }
+}
+
+impl<F: FnMut(T1, T2), T1: SystemParam, T2: SystemParam> IntoSystem<(T1, T2)> for F
+where
+    for<'a, 'b> &'a mut F:
+        FnMut(T1, T2) + FnMut(<T1 as SystemParam>::Item<'b>, <T2 as SystemParam>::Item<'b>),
+{
+    type System = FunctionSystem<(T1, T2), Self>;
+
+    fn into_system(self) -> Self::System {
+        FunctionSystem {
+            f: self,
+            marker: Default::default(),
+        }
+    }
+}
+
 macro_rules! impl_system_tuple {
     ($($params: ident),*) => {
         impl<F: FnMut($($params),*), $($params: 'static),*> System for FunctionSystem<($($params, )*), F> {
@@ -107,6 +151,48 @@ where
             f: self,
             marker: Default::default(),
         }
+    }
+}
+
+pub struct Res<'a, T>(RwLockReadGuard<'a, T>);
+
+impl<'a, T: 'static> SystemParam for Res<'a, T> {
+    type Item<'w> = Res<'w, T>;
+
+    fn fetch(world: &mut World) -> Self::Item<'_> {
+        Res(world.read_resource::<T>().expect("Resource not found"))
+    }
+}
+
+impl<'a, T> Deref for Res<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct ResMut<'a, T>(RwLockWriteGuard<'a, T>);
+
+impl<'a, T> Deref for ResMut<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a, T> DerefMut for ResMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a, T: 'static> SystemParam for ResMut<'a, T> {
+    type Item<'w> = ResMut<'w, T>;
+
+    fn fetch(world: &mut World) -> Self::Item<'_> {
+        ResMut(world.write_resource::<T>().expect("Resource not found"))
     }
 }
 
