@@ -7,11 +7,13 @@ use ecs::{
     world::World,
     Component,
 };
+use input::Input;
 use renderer::Renderer;
 use std::{sync::Arc, time::Instant};
 use winit::{
     event::{StartCause, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
@@ -20,15 +22,19 @@ mod buffers;
 mod camera_uniform;
 pub mod ecs;
 mod egui_renderer;
+pub mod input;
 pub mod orthographic_camera;
 pub mod renderer;
 mod vertices;
 
 pub mod prelude {
-    pub use crate::ecs::{
-        query::{Query, Read},
-        rendering::{Sprite, Transform},
-        scheduler::{Res, ResMut, Scheduler},
+    pub use crate::{
+        ecs::{
+            query::{Query, Read, Write},
+            rendering::{Sprite, Transform},
+            scheduler::{Res, ResMut, Scheduler},
+        },
+        input::Input,
     };
 }
 
@@ -99,6 +105,8 @@ impl State {
         world.register_component::<Transform>();
         world.register_component::<Sprite>();
 
+        world.insert_resource(Input::new());
+
         Self {
             window: None,
             window_id: None,
@@ -108,7 +116,7 @@ impl State {
         }
     }
 
-    pub fn init_rendering(&mut self, renderer: Renderer) {
+    pub(crate) fn init_rendering(&mut self, renderer: Renderer) {
         self.world.insert_resource(renderer);
 
         self.scheduler.add_system(sprite_render);
@@ -165,6 +173,40 @@ impl winit::application::ApplicationHandler for State {
             }
 
             WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                event,
+                is_synthetic,
+            } => {
+                if !is_synthetic {
+                    let mut input = self.world.write_resource::<Input>().unwrap();
+                    match event.physical_key {
+                        key @ PhysicalKey::Code(KeyCode::AltLeft)
+                        | key @ PhysicalKey::Code(KeyCode::AltRight)
+                        | key @ PhysicalKey::Code(KeyCode::ControlLeft)
+                        | key @ PhysicalKey::Code(KeyCode::ControlRight)
+                        | key @ PhysicalKey::Code(KeyCode::ShiftLeft)
+                        | key @ PhysicalKey::Code(KeyCode::ShiftRight)
+                        | key @ PhysicalKey::Code(KeyCode::Meta)
+                        | key @ PhysicalKey::Code(KeyCode::SuperLeft)
+                        | key @ PhysicalKey::Code(KeyCode::SuperRight)
+                        | key @ PhysicalKey::Code(KeyCode::Hyper) => {
+                            if event.state.is_pressed() {
+                                input.pressed_modifiers.insert(key);
+                            } else {
+                                input.pressed_modifiers.remove(&key);
+                            }
+                        }
+                        key => {
+                            if event.state.is_pressed() {
+                                input.pressed_keys.insert(key);
+                            } else {
+                                input.pressed_keys.remove(&key);
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         };
         // }
