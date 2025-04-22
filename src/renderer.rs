@@ -2,7 +2,6 @@ use std::{borrow::Cow, sync::Arc};
 
 use egui_wgpu::ScreenDescriptor;
 use egui_winit::EventResponse;
-use glam::Mat4;
 use wgpu::{
     util::DeviceExt, BindGroup, Buffer, Device, PipelineCompilationOptions, Queue, RenderPipeline,
     Surface, SurfaceConfiguration,
@@ -10,32 +9,9 @@ use wgpu::{
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 use crate::{
-    buffers::SlicedBuffer, camera_uniform::CameraUniform, egui_renderer::EguiRenderer,
-    orthographic_camera::OrthographicCamera, vertices::VertexColored,
+    buffers::SlicedBuffer, camera::camera_uniform::CameraUniform, egui_renderer::EguiRenderer,
+    vertices::VertexColored,
 };
-
-const VERTICES: &[VertexColored] = &[
-    VertexColored {
-        position: [-0.0868241, 0.49240386, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    VertexColored {
-        position: [-0.49513406, 0.06958647, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    VertexColored {
-        position: [-0.21918549, -0.44939706, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    VertexColored {
-        position: [0.35966998, -0.3473291, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    VertexColored {
-        position: [0.44147372, 0.2347359, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-];
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
@@ -62,15 +38,14 @@ pub struct Renderer {
     pub(crate) device: Device,
     pub(crate) queue: Queue,
     pub(crate) render_pipeline: RenderPipeline,
-    // pub(crate) camera_bind_group: BindGroup,
+    pub(crate) camera_bind_group: BindGroup,
     pub(crate) uniform_bind_group: BindGroup,
     pub(crate) uniform_buffer: Buffer,
     egui_renderer: EguiRenderer,
     pub(crate) vertex_buffer: SlicedBuffer,
     pub(crate) num_indices: u32,
     pub(crate) index_buffer: SlicedBuffer,
-    // camera: OrthographicCamera,
-    // camera_buffer: wgpu::Buffer,
+    pub(crate) camera_buffer: wgpu::Buffer,
     // camera_uniform: CameraUniform,
 }
 
@@ -106,7 +81,7 @@ impl Renderer {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("test-shader.wgsl"))),
         });
 
         let uniform = UniformBuffer::new(size.width as f32, size.height as f32);
@@ -141,9 +116,39 @@ impl Renderer {
             }],
         });
 
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[CameraUniform::new()]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline layout"),
-            bind_group_layouts: &[&uniform_bind_group_layout],
+            bind_group_layouts: &[&camera_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -238,6 +243,8 @@ impl Renderer {
             uniform_bind_group,
             num_indices,
             uniform_buffer,
+            camera_bind_group,
+            camera_buffer,
         }
     }
 

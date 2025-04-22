@@ -1,5 +1,6 @@
 use wgpu::Color;
 
+use crate::camera::Camera;
 use crate::ecs::query::{Query, Read};
 use crate::ecs::rendering::{Sprite, Transform};
 use crate::renderer::Renderer;
@@ -7,66 +8,69 @@ use crate::vertices::VertexColored;
 
 use super::scheduler::ResMut;
 
-pub(crate) fn sprite_render(
+pub(crate) fn render_sprites(
     sprites: Query<(Read<Sprite>, Read<Transform>)>,
+    cameras: Query<(Read<Camera>, Read<Transform>)>,
     mut renderer: ResMut<Renderer>,
 ) {
-    let mut vertices = Vec::new();
-    let mut indices = Vec::new();
-    let mut current_index: u16 = 0;
+    if cameras.iter().next().is_some() {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut current_index: u16 = 0;
 
-    for (_, (sprite, transform)) in sprites.iter() {
-        let width = sprite.size.x * transform.scale.x;
-        let height = sprite.size.y * transform.scale.y;
+        for (_, (sprite, transform)) in sprites.iter() {
+            let width = sprite.size.x * transform.scale.x;
+            let height = sprite.size.y * transform.scale.y;
 
-        vertices.push(VertexColored {
-            position: [
-                transform.position.x,
-                transform.position.y,
-                transform.position.z,
-            ],
-            color: sprite.color.into(),
-        });
+            vertices.push(VertexColored {
+                position: [
+                    transform.position.x,
+                    transform.position.y,
+                    transform.position.z,
+                ],
+                color: sprite.color.into(),
+            });
 
-        vertices.push(VertexColored {
-            position: [
-                transform.position.x,
-                transform.position.y + height,
-                transform.position.z,
-            ],
-            color: sprite.color.into(),
-        });
+            vertices.push(VertexColored {
+                position: [
+                    transform.position.x,
+                    transform.position.y - height,
+                    transform.position.z,
+                ],
+                color: sprite.color.into(),
+            });
 
-        vertices.push(VertexColored {
-            position: [
-                transform.position.x + width,
-                transform.position.y + height,
-                transform.position.z,
-            ],
-            color: sprite.color.into(),
-        });
+            vertices.push(VertexColored {
+                position: [
+                    transform.position.x + width,
+                    transform.position.y - height,
+                    transform.position.z,
+                ],
+                color: sprite.color.into(),
+            });
 
-        vertices.push(VertexColored {
-            position: [
-                transform.position.x + width,
-                transform.position.y,
-                transform.position.z,
-            ],
-            color: sprite.color.into(),
-        });
+            vertices.push(VertexColored {
+                position: [
+                    transform.position.x + width,
+                    transform.position.y,
+                    transform.position.z,
+                ],
+                color: sprite.color.into(),
+            });
 
-        indices.push(current_index);
-        indices.push(current_index + 1);
-        indices.push(current_index + 2);
+            indices.push(current_index);
+            indices.push(current_index + 1);
+            indices.push(current_index + 2);
 
-        indices.push(current_index);
-        indices.push(current_index + 2);
-        indices.push(current_index + 3);
+            indices.push(current_index);
+            indices.push(current_index + 2);
+            indices.push(current_index + 3);
 
-        current_index += 4;
+            current_index += 4;
+        }
+
+        renderer.render_sprites(&vertices, &indices);
     }
-
-    renderer.render_sprites(&vertices, &indices);
 }
 
 pub(crate) fn draw(renderer: ResMut<Renderer>) {
@@ -98,7 +102,7 @@ pub(crate) fn draw(renderer: ResMut<Renderer>) {
             occlusion_query_set: None,
         });
         rpass.set_pipeline(&renderer.render_pipeline);
-        rpass.set_bind_group(0, &renderer.uniform_bind_group, &[]);
+        rpass.set_bind_group(0, &renderer.camera_bind_group, &[]);
         rpass.set_vertex_buffer(0, renderer.vertex_buffer.get_slice(..));
         rpass.set_index_buffer(
             renderer.index_buffer.get_slice(..),

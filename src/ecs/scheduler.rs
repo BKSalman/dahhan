@@ -97,17 +97,33 @@ where
     }
 }
 
-impl<F: FnMut(T1, T2), T1: SystemParam, T2: SystemParam> IntoSystem<(T1, T2)> for F
+impl<F, T1: SystemParam, T2: SystemParam, T3: SystemParam> System
+    for FunctionSystem<(T1, T2, T3), F>
 where
-    for<'a, 'b> &'a mut F:
-        FnMut(T1, T2) + FnMut(<T1 as SystemParam>::Item<'b>, <T2 as SystemParam>::Item<'b>),
+    // for any two arbitrary lifetimes, a mutable reference to F with lifetime 'a
+    // implements FnMut taking parameters of lifetime 'b
+    for<'a, 'b> &'a mut F: FnMut(T1, T2, T3)
+        + FnMut(
+            <T1 as SystemParam>::Item<'b>,
+            <T2 as SystemParam>::Item<'b>,
+            <T3 as SystemParam>::Item<'b>,
+        ),
 {
-    type System = FunctionSystem<(T1, T2), Self>;
+    fn run(&mut self, world: &mut World) {
+        fn call_inner<T1, T2, T3>(mut f: impl FnMut(T1, T2, T3), _0: T1, _1: T2, _2: T3) {
+            f(_0, _1, _2)
+        }
 
-    fn into_system(self) -> Self::System {
-        FunctionSystem {
-            f: self,
-            marker: Default::default(),
+        // SAFETY: We're creating two mutable references to world, but we ensure
+        // they're used in a non-overlapping way. Each parameter fetch accesses
+        // different parts of the world, and we don't reuse the pointers after
+        // the function call.
+        unsafe {
+            let world_ptr = world as *mut World;
+            let param1 = T1::fetch(&mut *world_ptr);
+            let param2 = T2::fetch(&mut *world_ptr);
+            let param3 = T3::fetch(&mut *world_ptr);
+            call_inner(&mut self.f, param1, param2, param3);
         }
     }
 }
@@ -145,6 +161,41 @@ where
     for<'a, 'b> &'a mut F: FnMut(T) + FnMut(<T as SystemParam>::Item<'b>),
 {
     type System = FunctionSystem<(T,), Self>;
+
+    fn into_system(self) -> Self::System {
+        FunctionSystem {
+            f: self,
+            marker: Default::default(),
+        }
+    }
+}
+
+impl<F: FnMut(T1, T2), T1: SystemParam, T2: SystemParam> IntoSystem<(T1, T2)> for F
+where
+    for<'a, 'b> &'a mut F:
+        FnMut(T1, T2) + FnMut(<T1 as SystemParam>::Item<'b>, <T2 as SystemParam>::Item<'b>),
+{
+    type System = FunctionSystem<(T1, T2), Self>;
+
+    fn into_system(self) -> Self::System {
+        FunctionSystem {
+            f: self,
+            marker: Default::default(),
+        }
+    }
+}
+
+impl<F: FnMut(T1, T2, T3), T1: SystemParam, T2: SystemParam, T3: SystemParam>
+    IntoSystem<(T1, T2, T3)> for F
+where
+    for<'a, 'b> &'a mut F: FnMut(T1, T2, T3)
+        + FnMut(
+            <T1 as SystemParam>::Item<'b>,
+            <T2 as SystemParam>::Item<'b>,
+            <T3 as SystemParam>::Item<'b>,
+        ),
+{
+    type System = FunctionSystem<(T1, T2, T3), Self>;
 
     fn into_system(self) -> Self::System {
         FunctionSystem {

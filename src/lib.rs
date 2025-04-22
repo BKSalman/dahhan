@@ -1,6 +1,7 @@
+use camera::{update_camera_uniform, Camera};
 use ecs::{
     component::TupleAddComponent,
-    default_systems::{draw, sprite_render},
+    default_systems::{draw, render_sprites},
     entity::Entity,
     rendering::{Sprite, Transform},
     scheduler::{IntoSystem, Scheduler, System},
@@ -8,6 +9,7 @@ use ecs::{
     Component,
 };
 use input::Input;
+use prelude::{Query, Write};
 use renderer::Renderer;
 use std::{sync::Arc, time::Instant};
 use winit::{
@@ -19,11 +21,10 @@ use winit::{
 
 mod anymap;
 mod buffers;
-mod camera_uniform;
+pub mod camera;
 pub mod ecs;
 mod egui_renderer;
 pub mod input;
-pub mod orthographic_camera;
 pub mod renderer;
 mod vertices;
 
@@ -104,6 +105,7 @@ impl State {
 
         world.register_component::<Transform>();
         world.register_component::<Sprite>();
+        world.register_component::<Camera>();
 
         world.insert_resource(Input::new());
 
@@ -119,8 +121,9 @@ impl State {
     pub(crate) fn init_rendering(&mut self, renderer: Renderer) {
         self.world.insert_resource(renderer);
 
-        self.scheduler.add_system(sprite_render);
+        self.scheduler.add_system(render_sprites);
         self.scheduler.add_system(draw);
+        self.scheduler.add_system(update_camera_uniform);
     }
 }
 
@@ -160,15 +163,36 @@ impl winit::application::ApplicationHandler for State {
         // };
 
         // if !event_res.consumed {
+
         match event {
             WindowEvent::Resized(new_size) => {
-                let mut renderer = self.world.write_resource::<Renderer>().unwrap();
-                renderer.resize(new_size);
+                {
+                    let mut renderer = self.world.write_resource::<Renderer>().unwrap();
+                    renderer.resize(new_size);
+                }
+
+                let camera = self.world.query::<Query<Write<Camera>>>();
+                if let Some((_, camera)) = camera.iter().next() {
+                    match camera {
+                        Camera::Ortho(orthographic_camera) => {
+                            orthographic_camera.update_projection_matrix(
+                                -(new_size.width as f32 / 2.),
+                                new_size.width as f32 / 2.,
+                                -(new_size.height as f32 / 2.),
+                                new_size.height as f32 / 2.,
+                            );
+                        }
+                    }
+                }
             }
             WindowEvent::RedrawRequested => {
                 self.scheduler.run(&mut self.world);
                 // let mut renderer = self.world.write_resource::<Renderer>().unwrap();
                 // renderer.draw(|ctx| {}, wgpu::Color::BLACK);
+                {
+                    let mut input = self.world.write_resource::<Input>().unwrap();
+                    input.scroll_delta = 0.;
+                }
                 self.last_frame_time = Instant::now();
             }
 
@@ -206,6 +230,19 @@ impl winit::application::ApplicationHandler for State {
                         }
                     }
                 }
+            }
+            WindowEvent::MouseWheel {
+                device_id: _,
+                delta,
+                phase: _,
+            } => {
+                let mut input = self.world.write_resource::<Input>().unwrap();
+                input.scroll_delta = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, lines) => lines,
+                    winit::event::MouseScrollDelta::PixelDelta(physical_position) => {
+                        physical_position.y as f32
+                    }
+                };
             }
             _ => {}
         };

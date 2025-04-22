@@ -27,9 +27,11 @@
           fontconfig
           freetype
 
-          vulkan-headers
-          vulkan-loader
           libGL
+          vulkan-headers vulkan-loader
+          vulkan-tools vulkan-tools-lunarg
+          vulkan-extension-layer
+          vulkan-validation-layers
 
           libxkbcommon
           # WINIT_UNIX_BACKEND=wayland
@@ -41,6 +43,9 @@
           xorg.libXi
           xorg.libX11
         ];
+
+        packages = pkgs: buildInputs;
+
       in with pkgs; {
         devShells.${system} = {
           default = mkShell {
@@ -52,12 +57,21 @@
               })
               cargo-watch
               gdb
-              renderdoc
+              (pkgs.buildFHSEnv {
+                name = "renderdoc";
+                targetPkgs = packages;
+                runScript = ''
+                  #!/usr/bin/env bash
+                  ${renderdoc}/bin/qrenderdoc
+                '';
+              })
               valgrind
               heaptrack
             ];
 
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
+            VK_LAYER_PATH = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
+            VULKAN_SDK = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
           };
           nightly = mkShell {
             inherit buildInputs nativeBuildInputs;
@@ -70,7 +84,8 @@
             ];
 
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
-          };
+            VK_LAYER_PATH = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
+            VULKAN_SDK = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";          };
         };
       };
 }
