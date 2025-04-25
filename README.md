@@ -1,6 +1,6 @@
 # Dahhan | دهّان
 
-An experimental game engine
+A game engine out of curiosity
 
 
 ## Resources used
