@@ -8,40 +8,10 @@ use crate::World;
 
 type StoredSystem = Box<dyn System>;
 
-pub struct Scheduler {
-    systems: Vec<StoredSystem>,
-}
-
-impl Scheduler {
-    pub fn new() -> Self {
-        Self {
-            systems: Vec::new(),
-        }
-    }
-
-    pub fn run(&mut self, world: &mut World) {
-        for system in &mut self.systems {
-            system.run(world);
-        }
-    }
-
-    pub fn add_system<O, M, S: System + 'static>(
-        &mut self,
-        system: impl IntoSystem<O, M, System = S>,
-    ) {
-        self.systems.push(Box::new(system.into_system()));
-    }
-
-    pub(crate) fn initialize(&mut self, world: &mut World) {
-        for system in &mut self.systems {
-            system.initialize(world);
-        }
-    }
-}
-
 pub trait SystemParam {
+    // TODO: when supporting multithreading (probably not soon) add `Sync` and `Send`
     /// Used to store data which persists across invocations of a system.
-    type State: Send + Sync + 'static;
+    type State: 'static;
 
     type Item<'world, 'state>: SystemParam<State = Self::State>;
 
@@ -53,6 +23,20 @@ pub trait SystemParam {
 pub trait System {
     fn run(&mut self, world: &mut World);
     fn initialize(&mut self, world: &mut World);
+}
+
+pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
+    type Out;
+
+    type Param: SystemParam;
+
+    fn run(&mut self, param_value: <Self::Param as SystemParam>::Item<'_, '_>) -> Self::Out;
+}
+
+pub trait IntoSystem<Out, Marker> {
+    type System: System;
+
+    fn into_system(self) -> Self::System;
 }
 
 impl SystemParam for () {
@@ -125,12 +109,35 @@ impl<T1: SystemParam, T2: SystemParam, T3: SystemParam> SystemParam for (T1, T2,
     }
 }
 
-pub trait SystemParamFunction<Marker>: Send + Sync + 'static {
-    type Out;
+pub struct Scheduler {
+    systems: Vec<StoredSystem>,
+}
 
-    type Param: SystemParam;
+impl Scheduler {
+    pub fn new() -> Self {
+        Self {
+            systems: Vec::new(),
+        }
+    }
 
-    fn run(&mut self, param_value: <Self::Param as SystemParam>::Item<'_, '_>) -> Self::Out;
+    pub fn run(&mut self, world: &mut World) {
+        for system in &mut self.systems {
+            system.run(world);
+        }
+    }
+
+    pub fn add_system<O, M, S: System + 'static>(
+        &mut self,
+        system: impl IntoSystem<O, M, System = S>,
+    ) {
+        self.systems.push(Box::new(system.into_system()));
+    }
+
+    pub(crate) fn initialize(&mut self, world: &mut World) {
+        for system in &mut self.systems {
+            system.initialize(world);
+        }
+    }
 }
 
 pub struct FunctionSystemState<P: SystemParam> {
@@ -262,79 +269,6 @@ where
     }
 }
 
-// impl<F, T1: SystemParam, T2: SystemParam> System for FunctionSystem<(T1, T2), F>
-// where
-//     // for any two arbitrary lifetimes, a mutable reference to F with lifetime 'a
-//     // implements FnMut taking parameters of lifetime 'b
-//     for<'a, 'b> &'a mut F:
-//         FnMut(T1, T2) + FnMut(<T1 as SystemParam>::Item<'b>, <T2 as SystemParam>::Item<'b>),
-// {
-//     fn run(&mut self, world: &mut World) {
-//         fn call_inner<T1, T2>(mut f: impl FnMut(T1, T2), _0: T1, _1: T2) {
-//             f(_0, _1)
-//         }
-
-//         // SAFETY: We're creating two mutable references to world, but we ensure
-//         // they're used in a non-overlapping way. Each parameter fetch accesses
-//         // different parts of the world, and we don't reuse the pointers after
-//         // the function call.
-//         unsafe {
-//             let world_ptr = world as *mut World;
-//             let param1 = T1::fetch(&mut *world_ptr);
-//             let param2 = T2::fetch(&mut *world_ptr);
-//             call_inner(&mut self.f, param1, param2);
-//         }
-//     }
-// }
-
-// impl<F, T1: SystemParam, T2: SystemParam, T3: SystemParam> System
-//     for FunctionSystem<(T1, T2, T3), F>
-// where
-//     // for any two arbitrary lifetimes, a mutable reference to F with lifetime 'a
-//     // implements FnMut taking parameters of lifetime 'b
-//     for<'a, 'b> &'a mut F: FnMut(T1, T2, T3)
-//         + FnMut(
-//             <T1 as SystemParam>::Item<'b>,
-//             <T2 as SystemParam>::Item<'b>,
-//             <T3 as SystemParam>::Item<'b>,
-//         ),
-// {
-//     fn run(&mut self, world: &mut World) {
-//         fn call_inner<T1, T2, T3>(mut f: impl FnMut(T1, T2, T3), _0: T1, _1: T2, _2: T3) {
-//             f(_0, _1, _2)
-//         }
-
-//         // SAFETY: We're creating two mutable references to world, but we ensure
-//         // they're used in a non-overlapping way. Each parameter fetch accesses
-//         // different parts of the world, and we don't reuse the pointers after
-//         // the function call.
-//         unsafe {
-//             let world_ptr = world as *mut World;
-//             let param1 = T1::fetch(&mut *world_ptr);
-//             let param2 = T2::fetch(&mut *world_ptr);
-//             let param3 = T3::fetch(&mut *world_ptr);
-//             call_inner(&mut self.f, param1, param2, param3);
-//         }
-//     }
-// }
-
-macro_rules! impl_system_tuple {
-    ($($params: ident),*) => {
-        impl<F: FnMut($($params),*), $($params: 'static),*> System for FunctionSystem<($($params, )*), F> {
-            fn run(&mut self, world: &mut World) {
-                let _ = world;
-                (self.f)()
-            }
-        }
-    };
-}
-
-pub trait IntoSystem<Out, Marker> {
-    type System: System;
-
-    fn into_system(self) -> Self::System;
-}
-
 impl<Marker: 'static, F: SystemParamFunction<Marker>> IntoSystem<F::Out, Marker> for F {
     type System = FunctionSystem<Marker, Self>;
 
@@ -346,55 +280,6 @@ impl<Marker: 'static, F: SystemParamFunction<Marker>> IntoSystem<F::Out, Marker>
         }
     }
 }
-
-// impl<F: FnMut(T), T: SystemParam> IntoSystem<(T,)> for F
-// where
-//     for<'a, 'b> &'a mut F: FnMut(T) + FnMut(<T as SystemParam>::Item<'b>),
-// {
-//     type System = FunctionSystem<(T,), Self>;
-
-//     fn into_system(self) -> Self::System {
-//         FunctionSystem {
-//             f: self,
-//             marker: Default::default(),
-//         }
-//     }
-// }
-
-// impl<F: FnMut(T1, T2), T1: SystemParam, T2: SystemParam> IntoSystem<(T1, T2)> for F
-// where
-//     for<'a, 'b> &'a mut F:
-//         FnMut(T1, T2) + FnMut(<T1 as SystemParam>::Item<'b>, <T2 as SystemParam>::Item<'b>),
-// {
-//     type System = FunctionSystem<(T1, T2), Self>;
-
-//     fn into_system(self) -> Self::System {
-//         FunctionSystem {
-//             f: self,
-//             marker: Default::default(),
-//         }
-//     }
-// }
-
-// impl<F: FnMut(T1, T2, T3), T1: SystemParam, T2: SystemParam, T3: SystemParam>
-//     IntoSystem<(T1, T2, T3)> for F
-// where
-//     for<'a, 'b> &'a mut F: FnMut(T1, T2, T3)
-//         + FnMut(
-//             <T1 as SystemParam>::Item<'b>,
-//             <T2 as SystemParam>::Item<'b>,
-//             <T3 as SystemParam>::Item<'b>,
-//         ),
-// {
-//     type System = FunctionSystem<(T1, T2, T3), Self>;
-
-//     fn into_system(self) -> Self::System {
-//         FunctionSystem {
-//             f: self,
-//             marker: Default::default(),
-//         }
-//     }
-// }
 
 pub struct Res<'a, T>(RwLockReadGuard<'a, T>);
 
@@ -454,6 +339,41 @@ impl<'a, T: 'static> SystemParam for ResMut<'a, T> {
     }
 }
 
+pub struct Local<'s, T: Default + 'static>(pub(crate) &'s mut T);
+
+impl<'s, T: Default + 'static> Deref for Local<'s, T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'s, T: Default + 'static> DerefMut for Local<'s, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
+impl<'a, T: Default + 'static> SystemParam for Local<'a, T> {
+    type State = T;
+
+    type Item<'world, 'state> = Local<'state, T>;
+
+    fn init_state(world: &mut World) -> Self::State {
+        // TODO: add a `FromWorld` trait to allow for state to use world for initialization
+        let _ = world;
+        T::default()
+    }
+
+    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
+        let _ = world;
+        Local(state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::ecs::{
@@ -507,6 +427,8 @@ mod tests {
         scheduler.add_system(something);
 
         scheduler.add_system(something_else);
+
+        scheduler.initialize(&mut world);
 
         scheduler.run(&mut world);
     }

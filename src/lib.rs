@@ -3,6 +3,7 @@ use ecs::{
     component::TupleAddComponent,
     default_systems::{draw, render_sprites},
     entity::Entity,
+    events::Events,
     rendering::{Sprite, Transform},
     scheduler::{IntoSystem, Scheduler, System},
     world::World,
@@ -31,9 +32,10 @@ mod vertices;
 pub mod prelude {
     pub use crate::{
         ecs::{
+            events::{Event, EventReader, EventWriter},
             query::{Query, Read, Write},
             rendering::{Sprite, Transform},
-            scheduler::{Res, ResMut, Scheduler},
+            scheduler::{Local, Res, ResMut, Scheduler},
         },
         input::Input,
     };
@@ -91,6 +93,10 @@ impl App {
         system: impl IntoSystem<O, M, System = S>,
     ) {
         self.state.scheduler.add_system(system);
+    }
+
+    pub fn add_event<E: 'static>(&mut self) {
+        self.state.world.add_event::<E>();
     }
 }
 

@@ -49,6 +49,17 @@ fn move_camera(cameras: Query<(Read<Camera>, Write<Transform>)>, input: Res<Inpu
     }
 }
 
+fn read_events(events: EventReader<u32>) {
+    for event in events {
+        println!("{event}");
+    }
+}
+
+fn send_events(mut local: Local<u32>, mut events: EventWriter<u32>) {
+    events.send(*local);
+    *local += 1;
+}
+
 pub fn main() {
     let mut app = App::new();
 
@@ -74,8 +85,12 @@ pub fn main() {
         },
     ));
 
+    app.add_event::<u32>();
+
     app.add_system(get_input);
     app.add_system(move_camera);
+    app.add_system(read_events);
+    app.add_system(send_events);
 
     app.run().unwrap();
 }
