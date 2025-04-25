@@ -36,9 +36,15 @@ impl<'a, T: ComponentAccessor> Query<'a, T> {
 }
 
 impl<T: ComponentAccessor + 'static> SystemParam for Query<'_, T> {
-    type Item<'w> = Query<'w, T>;
+    type State = ();
+    type Item<'w, 's> = Query<'w, T>;
 
-    fn fetch(world: &mut World) -> Self::Item<'_> {
+    fn init_state(world: &mut World) -> Self::State {
+        let _ = world;
+        ()
+    }
+
+    fn get_param<'w, 's>(world: &'w mut World, _state: &'s mut Self::State) -> Self::Item<'w, 's> {
         let entities = T::entities(world);
         Query::new(world, entities)
     }

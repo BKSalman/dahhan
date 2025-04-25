@@ -86,7 +86,10 @@ impl App {
         self.state.world.remove_component::<T>(entity);
     }
 
-    pub fn add_system<I, S: System + 'static>(&mut self, system: impl IntoSystem<I, System = S>) {
+    pub fn add_system<O, M, S: System + 'static>(
+        &mut self,
+        system: impl IntoSystem<O, M, System = S>,
+    ) {
         self.state.scheduler.add_system(system);
     }
 }
@@ -125,6 +128,10 @@ impl State {
         self.scheduler.add_system(draw);
         self.scheduler.add_system(update_camera_uniform);
     }
+
+    fn initialize(&mut self) {
+        self.scheduler.initialize(&mut self.world);
+    }
 }
 
 impl winit::application::ApplicationHandler for State {
@@ -143,6 +150,8 @@ impl winit::application::ApplicationHandler for State {
         // self.renderer = Some();
         self.window_id = Some(window.id());
         self.window = Some(window);
+
+        self.initialize();
     }
 
     fn window_event(
