@@ -57,6 +57,7 @@
               })
               cargo-watch
               gdb
+              gdbgui
               (pkgs.buildFHSEnv {
                 name = "renderdoc";
                 targetPkgs = packages;

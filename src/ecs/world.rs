@@ -8,7 +8,7 @@ use crate::anymap::AnyMap;
 use super::{
     component::{Component, Components, ComponentsInfo, TupleAddComponent},
     entity::Entity,
-    events::Events,
+    events::{Event, EventRegistry, Events},
     generational_array::GenerationalIndexAllocator,
     query::{ComponentAccessor, Query},
 };
@@ -111,14 +111,24 @@ impl World {
         Query::new(self, entities)
     }
 
-    pub fn send_event<E: 'static>(&mut self, event: E) {
+    pub fn send_event<E: Event>(&mut self, event: E) {
         let mut events = self.write_resource::<Events<E>>().unwrap();
 
         events.send(event);
     }
 
-    pub fn add_event<E: 'static>(&mut self) {
+    pub fn add_event<E: Event>(&mut self) {
         self.insert_resource(Events::<E>::new());
+        let mut event_registry = self.write_resource::<EventRegistry>().unwrap();
+        event_registry.register_event::<E>();
+    }
+
+    pub fn update_events(&mut self) {
+        let this = std::ptr::from_mut(self);
+        let registry = self.read_resource::<EventRegistry>().unwrap();
+        unsafe {
+            registry.update_events(&mut *this);
+        }
     }
 }
 

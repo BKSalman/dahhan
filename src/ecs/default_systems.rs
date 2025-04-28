@@ -1,12 +1,48 @@
 use wgpu::Color;
+use winit::dpi::PhysicalSize;
 
 use crate::camera::Camera;
 use crate::ecs::query::{Query, Read};
 use crate::ecs::rendering::{Sprite, Transform};
 use crate::renderer::Renderer;
 use crate::vertices::VertexColored;
+use crate::WindowResized;
 
+use super::events::EventReader;
+use super::query::Write;
 use super::scheduler::ResMut;
+
+pub(crate) fn resize_surface(
+    mut resize_event: EventReader<WindowResized>,
+    mut renderer: ResMut<Renderer>,
+) {
+    for new_size in resize_event.read() {
+        renderer.resize(PhysicalSize::new(
+            new_size.width as u32,
+            new_size.height as u32,
+        ));
+    }
+}
+
+pub(crate) fn resize_camera(
+    mut resize_event: EventReader<WindowResized>,
+    camera: Query<Write<Camera>>,
+) {
+    if let Some((_, camera)) = camera.iter().next() {
+        for new_size in resize_event.read() {
+            match camera {
+                Camera::Ortho(orthographic_camera) => {
+                    orthographic_camera.update_projection_matrix(
+                        -(new_size.width as f32 / 2.),
+                        new_size.width as f32 / 2.,
+                        -(new_size.height as f32 / 2.),
+                        new_size.height as f32 / 2.,
+                    );
+                }
+            }
+        }
+    }
+}
 
 pub(crate) fn render_sprites(
     sprites: Query<(Read<Sprite>, Read<Transform>)>,

@@ -1,6 +1,11 @@
 use dahhan::{camera::Camera, prelude::*, App};
 use glam::{Vec2, Vec3};
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct SomeEvent(u32);
+
+impl Event for SomeEvent {}
+
 fn get_input(squares: Query<(Read<Sprite>, Write<Transform>)>, input: Res<Input>) {
     for (_e, (_, transform)) in squares.iter() {
         let vertical_movement = (input.is_pressed(winit::keyboard::KeyCode::KeyW) as i8
@@ -49,14 +54,14 @@ fn move_camera(cameras: Query<(Read<Camera>, Write<Transform>)>, input: Res<Inpu
     }
 }
 
-fn read_events(events: EventReader<u32>) {
-    for event in events {
-        println!("{event}");
+fn read_events(mut events: EventReader<SomeEvent>) {
+    for event in events.read() {
+        println!("{event:?}");
     }
 }
 
-fn send_events(mut local: Local<u32>, mut events: EventWriter<u32>) {
-    events.send(*local);
+fn send_events(mut local: Local<u32>, mut events: EventWriter<SomeEvent>) {
+    events.send(SomeEvent(*local));
     *local += 1;
 }
 
@@ -85,7 +90,7 @@ pub fn main() {
         },
     ));
 
-    app.add_event::<u32>();
+    app.add_event::<SomeEvent>();
 
     app.add_system(get_input);
     app.add_system(move_camera);

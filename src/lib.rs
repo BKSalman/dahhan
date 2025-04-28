@@ -1,16 +1,16 @@
 use camera::{update_camera_uniform, Camera};
 use ecs::{
     component::TupleAddComponent,
-    default_systems::{draw, render_sprites},
+    default_systems::{draw, render_sprites, resize_camera, resize_surface},
     entity::Entity,
-    events::Events,
+    events::EventRegistry,
     rendering::{Sprite, Transform},
     scheduler::{IntoSystem, Scheduler, System},
     world::World,
     Component,
 };
 use input::Input;
-use prelude::{Query, Write};
+use prelude::{Event, Query, Write};
 use renderer::Renderer;
 use std::{sync::Arc, time::Instant};
 use winit::{
@@ -95,7 +95,7 @@ impl App {
         self.state.scheduler.add_system(system);
     }
 
-    pub fn add_event<E: 'static>(&mut self) {
+    pub fn add_event<E: Event>(&mut self) {
         self.state.world.add_event::<E>();
     }
 }
@@ -118,6 +118,10 @@ impl State {
 
         world.insert_resource(Input::new());
 
+        world.insert_resource(EventRegistry::new());
+
+        world.add_event::<WindowResized>();
+
         Self {
             window: None,
             window_id: None,
@@ -132,6 +136,8 @@ impl State {
 
         self.scheduler.add_system(render_sprites);
         self.scheduler.add_system(draw);
+        self.scheduler.add_system(resize_surface);
+        self.scheduler.add_system(resize_camera);
         self.scheduler.add_system(update_camera_uniform);
     }
 
@@ -150,6 +156,8 @@ impl winit::application::ApplicationHandler for State {
         let window = event_loop.create_window(window_attributes).unwrap();
         let window = Arc::new(window);
 
+        // FIXME: should be added in a better place
+        // because `resumed` could be called more than once
         let renderer = Renderer::new(Arc::clone(&window));
         self.init_rendering(renderer);
 
@@ -181,36 +189,22 @@ impl winit::application::ApplicationHandler for State {
 
         match event {
             WindowEvent::Resized(new_size) => {
-                {
-                    let mut renderer = self.world.write_resource::<Renderer>().unwrap();
-                    renderer.resize(new_size);
-                }
-
-                let camera = self.world.query::<Query<Write<Camera>>>();
-                if let Some((_, camera)) = camera.iter().next() {
-                    match camera {
-                        Camera::Ortho(orthographic_camera) => {
-                            orthographic_camera.update_projection_matrix(
-                                -(new_size.width as f32 / 2.),
-                                new_size.width as f32 / 2.,
-                                -(new_size.height as f32 / 2.),
-                                new_size.height as f32 / 2.,
-                            );
-                        }
-                    }
-                }
+                self.world.send_event(WindowResized {
+                    width: new_size.width as f32,
+                    height: new_size.height as f32,
+                });
             }
             WindowEvent::RedrawRequested => {
                 self.scheduler.run(&mut self.world);
-                // let mut renderer = self.world.write_resource::<Renderer>().unwrap();
-                // renderer.draw(|ctx| {}, wgpu::Color::BLACK);
+
                 {
                     let mut input = self.world.write_resource::<Input>().unwrap();
                     input.scroll_delta = 0.;
                 }
+
+                self.world.update_events();
                 self.last_frame_time = Instant::now();
             }
-
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::KeyboardInput {
                 device_id: _,
@@ -273,3 +267,11 @@ impl winit::application::ApplicationHandler for State {
         }
     }
 }
+
+#[derive(Copy, Clone)]
+pub struct WindowResized {
+    pub width: f32,
+    pub height: f32,
+}
+
+impl Event for WindowResized {}
