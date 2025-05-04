@@ -33,10 +33,10 @@ pub(crate) fn resize_camera(
             match camera {
                 Camera::Ortho(orthographic_camera) => {
                     orthographic_camera.update_projection_matrix(
-                        -(new_size.width as f32 / 2.),
-                        new_size.width as f32 / 2.,
-                        -(new_size.height as f32 / 2.),
-                        new_size.height as f32 / 2.,
+                        -new_size.width / 2.,
+                        new_size.width / 2.,
+                        -new_size.height / 2.,
+                        new_size.height / 2.,
                     );
                 }
             }

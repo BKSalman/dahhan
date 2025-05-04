@@ -1,6 +1,6 @@
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 
-use crate::{prelude::Transform, OPENGL_TO_WGPU_MATRIX};
+use crate::prelude::Transform;
 
 #[derive(Debug)]
 pub struct OrthographicCamera {
@@ -23,11 +23,7 @@ impl OrthographicCamera {
     }
 
     pub fn build_view_projection_matrix(&self, transform: &Transform) -> Mat4 {
-        // Create translation matrix (move world in opposite direction of camera)
-        let translation = Mat4::from_translation(-transform.position);
-
-        // Create rotation matrix
-        let rotation = Mat4::from_rotation_z(-transform.rotation);
+        let view = Mat4::look_at_rh(Vec3::new(0., 0., 2.), Vec3::ZERO, Vec3::Y);
 
         let scale = Mat4::from_scale(glam::Vec3::new(
             transform.scale.x.max(0.001),
@@ -35,10 +31,8 @@ impl OrthographicCamera {
             1.0,
         ));
 
-        // Combined view matrix (apply scale first, then rotation, then translation)
-        let view = translation * rotation * scale;
+        let view = view * scale;
 
-        // Combine with projection matrix
-        OPENGL_TO_WGPU_MATRIX * self.projection_matrix * view
+        self.projection_matrix * view
     }
 }

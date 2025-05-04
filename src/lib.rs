@@ -41,14 +41,6 @@ pub mod prelude {
     };
 }
 
-#[rustfmt::skip]
-pub(crate) const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::Mat4::from_cols_array(&[
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.5,
-    0.0, 0.0, 0.0, 1.0,
-]);
-
 pub struct App {
     state: State,
     event_loop: EventLoop<()>,
