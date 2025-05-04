@@ -6,7 +6,7 @@ use crate::ecs::query::{Query, Read};
 use crate::ecs::rendering::{Sprite, Transform};
 use crate::renderer::Renderer;
 use crate::vertices::VertexColored;
-use crate::WindowResized;
+use crate::{window, WindowResized};
 
 use super::events::EventReader;
 use super::query::Write;
@@ -41,6 +41,16 @@ pub(crate) fn resize_camera(
                 }
             }
         }
+    }
+}
+
+pub(crate) fn update_window_resource(
+    mut resize_event: EventReader<WindowResized>,
+    mut window: ResMut<window::Window>,
+) {
+    for new_size in resize_event.read() {
+        window.width = new_size.width;
+        window.height = new_size.height;
     }
 }
 

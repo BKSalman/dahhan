@@ -1,7 +1,9 @@
 use camera::{update_camera_uniform, Camera};
 use ecs::{
     component::TupleAddComponent,
-    default_systems::{draw, render_sprites, resize_camera, resize_surface},
+    default_systems::{
+        draw, render_sprites, resize_camera, resize_surface, update_window_resource,
+    },
     entity::Entity,
     events::EventRegistry,
     rendering::{Sprite, Transform},
@@ -10,7 +12,7 @@ use ecs::{
     Component,
 };
 use input::Input;
-use prelude::{Event, Query, Write};
+use prelude::Event;
 use renderer::Renderer;
 use std::{sync::Arc, time::Instant};
 use time::Time;
@@ -30,6 +32,7 @@ pub mod input;
 pub mod renderer;
 pub mod time;
 mod vertices;
+pub mod window;
 
 pub mod prelude {
     pub use crate::{
@@ -41,6 +44,7 @@ pub mod prelude {
         },
         input::{keyboard::KeyCode, Input},
         time::Time,
+        window::Window,
     };
 }
 
@@ -105,6 +109,7 @@ struct State {
 impl State {
     fn new() -> Self {
         let mut world = World::new();
+        let mut scheduler = Scheduler::new();
 
         world.register_component::<Transform>();
         world.register_component::<Sprite>();
@@ -117,12 +122,14 @@ impl State {
         world.insert_resource(Time::new());
 
         world.add_event::<WindowResized>();
+        world.insert_resource(window::Window::new());
+        scheduler.add_system(update_window_resource);
 
         Self {
             window: None,
             window_id: None,
             world,
-            scheduler: Scheduler::new(),
+            scheduler,
         }
     }
 
@@ -146,17 +153,21 @@ impl winit::application::ApplicationHandler for State {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
 
         let window_attributes = Window::default_attributes()
-            .with_title("Fantastic window number one!")
+            .with_title("Dahhan")
             .with_inner_size(winit::dpi::LogicalSize::new(128.0, 128.0));
         let window = event_loop.create_window(window_attributes).unwrap();
         let window = Arc::new(window);
 
-        // FIXME: should be added in a better place
+        // FIXME: systems should be added in a better place
         // because `resumed` could be called more than once
         let renderer = Renderer::new(Arc::clone(&window));
         self.init_rendering(renderer);
 
-        // self.renderer = Some();
+        self.world.send_event(WindowResized {
+            width: window.inner_size().width as f32,
+            height: window.inner_size().height as f32,
+        });
+
         self.window_id = Some(window.id());
         self.window = Some(window);
 
