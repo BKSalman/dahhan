@@ -37,7 +37,7 @@ pub mod prelude {
             rendering::{Sprite, Transform},
             scheduler::{Local, Res, ResMut, Scheduler},
         },
-        input::Input,
+        input::{keyboard::KeyCode, Input},
     };
 }
 

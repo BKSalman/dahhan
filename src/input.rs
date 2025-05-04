@@ -27,3 +27,7 @@ impl Input {
         self.scroll_delta
     }
 }
+
+pub mod keyboard {
+    pub use winit::keyboard::KeyCode;
+}
