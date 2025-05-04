@@ -152,6 +152,38 @@ impl<A: ComponentAccessor, B: ComponentAccessor> ComponentAccessor for (A, B) {
     }
 }
 
+impl<A: ComponentAccessor, B: ComponentAccessor, C: ComponentAccessor> ComponentAccessor
+    for (A, B, C)
+{
+    type Output<'new> = (A::Output<'new>, B::Output<'new>, C::Output<'new>);
+
+    fn get_component(world: &mut World, entity: Entity) -> Option<Self::Output<'_>> {
+        unsafe {
+            let world_ptr = world as *mut World;
+
+            let a_component = A::get_component(&mut *world_ptr, entity)?;
+            let b_component = B::get_component(&mut *world_ptr, entity)?;
+            let c_component = C::get_component(&mut *world_ptr, entity)?;
+
+            Some((a_component, b_component, c_component))
+        }
+    }
+
+    fn entities(world: &mut World) -> Vec<Entity> {
+        unsafe {
+            let world_ptr = world as *mut World;
+            let entities_a = A::entities(&mut *world_ptr);
+            let entities_b = B::entities(&mut *world_ptr);
+            let entities_c = C::entities(&mut *world_ptr);
+
+            entities_a
+                .into_iter()
+                .filter(|e| entities_b.contains(e) && entities_c.contains(e))
+                .collect()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -109,6 +109,42 @@ impl<T1: SystemParam, T2: SystemParam, T3: SystemParam> SystemParam for (T1, T2,
     }
 }
 
+impl<T1: SystemParam, T2: SystemParam, T3: SystemParam, T4: SystemParam> SystemParam
+    for (T1, T2, T3, T4)
+{
+    type State = (T1::State, T2::State, T3::State, T4::State);
+
+    type Item<'world, 'state> = (
+        T1::Item<'world, 'state>,
+        T2::Item<'world, 'state>,
+        T3::Item<'world, 'state>,
+        T4::Item<'world, 'state>,
+    );
+
+    fn init_state(world: &mut World) -> Self::State {
+        (
+            T1::init_state(world),
+            T2::init_state(world),
+            T3::init_state(world),
+            T4::init_state(world),
+        )
+    }
+
+    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
+        let (state1, state2, state3, state4) = state;
+        let world_ref = std::ptr::from_mut(world);
+        // FIXME: idk what I'm doing, I probably should not use unsafe here or something
+        unsafe {
+            (
+                T1::get_param(&mut *world_ref, state1),
+                T2::get_param(&mut *world_ref, state2),
+                T3::get_param(&mut *world_ref, state3),
+                T4::get_param(&mut *world_ref, state4),
+            )
+        }
+    }
+}
+
 pub struct Scheduler {
     systems: Vec<StoredSystem>,
 }
@@ -266,6 +302,38 @@ where
         }
         let (_0, _1, _2) = param_value;
         call_inner(self, _0, _1, _2)
+    }
+}
+
+impl<Out, Func, T1: SystemParam, T2: SystemParam, T3: SystemParam, T4: SystemParam>
+    SystemParamFunction<fn(T1, T2, T3, T4) -> Out> for Func
+where
+    Func: Send + Sync + 'static,
+    for<'a> &'a mut Func: FnMut(T1, T2, T3, T4) -> Out
+        + FnMut(
+            <T1 as SystemParam>::Item<'_, '_>,
+            <T2 as SystemParam>::Item<'_, '_>,
+            <T3 as SystemParam>::Item<'_, '_>,
+            <T4 as SystemParam>::Item<'_, '_>,
+        ) -> Out,
+    Out: 'static,
+{
+    type Out = Out;
+
+    type Param = (T1, T2, T3, T4);
+
+    fn run(&mut self, param_value: <Self::Param as SystemParam>::Item<'_, '_>) -> Self::Out {
+        fn call_inner<Out, T1, T2, T3, T4>(
+            mut f: impl FnMut(T1, T2, T3, T4) -> Out,
+            _0: T1,
+            _1: T2,
+            _2: T3,
+            _3: T4,
+        ) -> Out {
+            f(_0, _1, _2, _3)
+        }
+        let (_0, _1, _2, _3) = param_value;
+        call_inner(self, _0, _1, _2, _3)
     }
 }
 

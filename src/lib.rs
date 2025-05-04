@@ -15,7 +15,7 @@ use renderer::Renderer;
 use std::{sync::Arc, time::Instant};
 use time::Time;
 use winit::{
-    event::{StartCause, WindowEvent},
+    event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
