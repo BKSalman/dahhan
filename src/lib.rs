@@ -13,6 +13,7 @@ use input::Input;
 use prelude::{Event, Query, Write};
 use renderer::Renderer;
 use std::{sync::Arc, time::Instant};
+use time::Time;
 use winit::{
     event::{StartCause, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
@@ -27,6 +28,7 @@ pub mod ecs;
 mod egui_renderer;
 pub mod input;
 pub mod renderer;
+pub mod time;
 mod vertices;
 
 pub mod prelude {
@@ -38,6 +40,7 @@ pub mod prelude {
             scheduler::{Local, Res, ResMut, Scheduler},
         },
         input::{keyboard::KeyCode, Input},
+        time::Time,
     };
 }
 
@@ -95,7 +98,6 @@ impl App {
 struct State {
     window: Option<Arc<Window>>,
     window_id: Option<WindowId>,
-    last_frame_time: Instant,
     world: World,
     scheduler: Scheduler,
 }
@@ -112,12 +114,13 @@ impl State {
 
         world.insert_resource(EventRegistry::new());
 
+        world.insert_resource(Time::new());
+
         world.add_event::<WindowResized>();
 
         Self {
             window: None,
             window_id: None,
-            last_frame_time: Instant::now(),
             world,
             scheduler: Scheduler::new(),
         }
@@ -194,8 +197,12 @@ impl winit::application::ApplicationHandler for State {
                     input.scroll_delta = 0.;
                 }
 
+                {
+                    let mut time = self.world.write_resource::<Time>().unwrap();
+                    time.last_frame_time = Instant::now();
+                }
+
                 self.world.update_events();
-                self.last_frame_time = Instant::now();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::KeyboardInput {
@@ -248,15 +255,6 @@ impl winit::application::ApplicationHandler for State {
             _ => {}
         };
         // }
-    }
-
-    fn new_events(&mut self, _event_loop: &ActiveEventLoop, cause: StartCause) {
-        match cause {
-            StartCause::Poll => {
-                self.last_frame_time = Instant::now();
-            }
-            _ => {}
-        }
     }
 }
 
