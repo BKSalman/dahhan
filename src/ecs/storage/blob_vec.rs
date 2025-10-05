@@ -32,11 +32,11 @@ impl BlobVec {
     }
 
     unsafe fn typed_ref<T>(&self) -> &Vec<T> {
-        std::mem::transmute(&self.data)
+        unsafe { std::mem::transmute(&self.data) }
     }
 
     unsafe fn typed_mut<T>(&mut self) -> &mut Vec<T> {
-        std::mem::transmute(&mut self.data)
+        unsafe { std::mem::transmute(&mut self.data) }
     }
 
     /// Pushes a new element of type `T` into the vector
@@ -49,7 +49,7 @@ impl BlobVec {
     pub unsafe fn push<T>(&mut self, item: T) {
         assert!(Layout::new::<T>() == self.item_layout);
 
-        self.typed_mut().push(item);
+        unsafe { self.typed_mut().push(item) };
     }
 
     /// Returns a reference to the element at the given index
@@ -62,7 +62,7 @@ impl BlobVec {
     pub unsafe fn get<T>(&self, index: usize) -> Option<&T> {
         assert!(Layout::new::<T>() == self.item_layout);
 
-        self.typed_ref().get(index)
+        unsafe { self.typed_ref().get(index) }
     }
 
     /// Returns a mutable reference to the element at the given index
@@ -75,7 +75,7 @@ impl BlobVec {
     pub unsafe fn get_mut<T>(&mut self, index: usize) -> Option<&mut T> {
         assert!(Layout::new::<T>() == self.item_layout);
 
-        self.typed_mut().get_mut(index)
+        unsafe { self.typed_mut().get_mut(index) }
     }
 
     // TODO: handle 1 element
@@ -86,7 +86,7 @@ impl BlobVec {
 
         let len = self.data.len();
         if len == 1 {
-            self.data.set_len(0);
+            unsafe { self.data.set_len(0) };
             return;
         }
 
@@ -95,12 +95,14 @@ impl BlobVec {
             assert_failed(index, len);
         }
         let base_ptr = self.data.as_mut_ptr();
-        std::ptr::swap_nonoverlapping(
-            base_ptr.add(bytes_len - self.item_layout.size()),
-            base_ptr.add(index * self.item_layout.size()),
-            self.item_layout.size(),
-        );
-        self.data.set_len(len - 1);
+        unsafe {
+            std::ptr::swap_nonoverlapping(
+                base_ptr.add(bytes_len - self.item_layout.size()),
+                base_ptr.add(index * self.item_layout.size()),
+                self.item_layout.size(),
+            )
+        };
+        unsafe { self.data.set_len(len - 1) };
     }
 
     pub fn len(&self) -> usize {

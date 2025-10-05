@@ -86,7 +86,8 @@
 
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
             VK_LAYER_PATH = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
-            VULKAN_SDK = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";          };
+            VULKAN_SDK = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
+          };
         };
       };
 }

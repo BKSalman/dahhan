@@ -1,5 +1,6 @@
-use camera::{update_camera_uniform, Camera};
+use camera::{Camera, update_camera_uniform};
 use ecs::{
+    Component,
     component::TupleAddComponent,
     default_systems::{
         draw, render_sprites, resize_camera, resize_surface, update_window_resource,
@@ -9,7 +10,6 @@ use ecs::{
     rendering::{Sprite, Transform},
     scheduler::{IntoSystem, Scheduler, System},
     world::World,
-    Component,
 };
 use input::Input;
 use prelude::Event;
@@ -42,7 +42,7 @@ pub mod prelude {
             rendering::{Sprite, Transform},
             scheduler::{Local, Res, ResMut, Scheduler},
         },
-        input::{keyboard::KeyCode, Input},
+        input::{Input, keyboard::KeyCode},
         time::Time,
         window::Window,
     };

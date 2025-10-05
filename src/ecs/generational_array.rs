@@ -183,10 +183,12 @@ impl<T> GenerationalIndexArray<T> {
     }
 
     pub unsafe fn get_unchecked_mut(&mut self, gen_index: GenerationalIndex) -> &mut T {
-        self.0[gen_index.index]
-            .as_mut()
-            .map(|e| &mut e.value)
-            .unwrap_unchecked()
+        unsafe {
+            self.0[gen_index.index]
+                .as_mut()
+                .map(|e| &mut e.value)
+                .unwrap_unchecked()
+        }
     }
 
     pub fn retain<F: FnMut(GenerationalIndex, &mut T) -> bool>(&mut self, mut f: F) {

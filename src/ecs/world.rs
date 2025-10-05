@@ -42,7 +42,9 @@ impl World {
             .map(|r| r.into_inner().unwrap())
     }
 
-    pub fn read_resource<T: Any + 'static>(&self) -> Result<RwLockReadGuard<T>, anyhow::Error> {
+    pub fn read_resource<T: Any + 'static>(
+        &'_ self,
+    ) -> Result<RwLockReadGuard<'_, T>, anyhow::Error> {
         let resource = self
             .resources
             .get::<RwLock<T>>()
@@ -51,7 +53,9 @@ impl World {
         Ok(resource.read().unwrap())
     }
 
-    pub fn write_resource<T: Any + 'static>(&self) -> Result<RwLockWriteGuard<T>, anyhow::Error> {
+    pub fn write_resource<T: Any + 'static>(
+        &'_ self,
+    ) -> Result<RwLockWriteGuard<'_, T>, anyhow::Error> {
         let resource = self
             .resources
             .get::<RwLock<T>>()

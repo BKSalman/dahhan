@@ -3,8 +3,8 @@ use std::{borrow::Cow, sync::Arc};
 use egui_wgpu::ScreenDescriptor;
 use egui_winit::EventResponse;
 use wgpu::{
-    util::DeviceExt, BindGroup, Buffer, Device, PipelineCompilationOptions, Queue, RenderPipeline,
-    Surface, SurfaceConfiguration,
+    BindGroup, Buffer, Device, PipelineCompilationOptions, Queue, RenderPipeline, Surface,
+    SurfaceConfiguration, util::DeviceExt,
 };
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
@@ -66,17 +66,15 @@ impl Renderer {
         }))
         .expect("Failed to find an appropriate adapter");
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                required_limits:
-                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
-            },
-            None,
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features: wgpu::Features::empty(),
+            // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
+            required_limits:
+                wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+            memory_hints: wgpu::MemoryHints::MemoryUsage,
+            trace: wgpu::Trace::Off,
+        }))
         .expect("Failed to create device");
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
