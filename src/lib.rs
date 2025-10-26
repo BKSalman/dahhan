@@ -36,6 +36,7 @@ pub mod window;
 
 pub mod prelude {
     pub use crate::{
+        App,
         ecs::{
             events::{Event, EventReader, EventWriter},
             query::{Query, Read, Write},
@@ -71,8 +72,10 @@ impl App {
         self.state.world.insert_resource(resource);
     }
 
-    pub fn register_component<T: Component>(&mut self) {
+    pub fn register_component<T: Component>(mut self) -> Self {
         self.state.world.register_component::<T>();
+
+        self
     }
 
     pub fn add_entity<T: TupleAddComponent>(&mut self, components: T) -> Entity {
@@ -87,15 +90,28 @@ impl App {
         self.state.world.remove_component::<T>(entity);
     }
 
-    pub fn add_system<O, M, S: System + 'static>(
-        &mut self,
+    pub fn add_startup_system<O, M, S: System + 'static>(
+        mut self,
         system: impl IntoSystem<O, M, System = S>,
-    ) {
-        self.state.scheduler.add_system(system);
+    ) -> Self {
+        self.state.scheduler.add_startup_system(system);
+
+        self
     }
 
-    pub fn add_event<E: Event>(&mut self) {
+    pub fn add_system<O, M, S: System + 'static>(
+        mut self,
+        system: impl IntoSystem<O, M, System = S>,
+    ) -> Self {
+        self.state.scheduler.add_system(system);
+
+        self
+    }
+
+    pub fn add_event<E: Event>(mut self) -> Self {
         self.state.world.add_event::<E>();
+
+        self
     }
 }
 
@@ -172,6 +188,8 @@ impl winit::application::ApplicationHandler for State {
         self.window = Some(window);
 
         self.initialize();
+
+        self.scheduler.startup(&mut self.world);
     }
 
     fn window_event(

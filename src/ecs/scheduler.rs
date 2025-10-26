@@ -146,6 +146,7 @@ impl<T1: SystemParam, T2: SystemParam, T3: SystemParam, T4: SystemParam> SystemP
 }
 
 pub struct Scheduler {
+    startup_systems: Vec<StoredSystem>,
     systems: Vec<StoredSystem>,
 }
 
@@ -153,6 +154,13 @@ impl Scheduler {
     pub fn new() -> Self {
         Self {
             systems: Vec::new(),
+            startup_systems: Vec::new(),
+        }
+    }
+
+    pub fn startup(&mut self, world: &mut World) {
+        for system in &mut self.startup_systems {
+            system.run(world);
         }
     }
 
@@ -160,6 +168,13 @@ impl Scheduler {
         for system in &mut self.systems {
             system.run(world);
         }
+    }
+
+    pub fn add_startup_system<O, M, S: System + 'static>(
+        &mut self,
+        system: impl IntoSystem<O, M, System = S>,
+    ) {
+        self.startup_systems.push(Box::new(system.into_system()));
     }
 
     pub fn add_system<O, M, S: System + 'static>(
@@ -170,6 +185,9 @@ impl Scheduler {
     }
 
     pub(crate) fn initialize(&mut self, world: &mut World) {
+        for system in &mut self.startup_systems {
+            system.initialize(world);
+        }
         for system in &mut self.systems {
             system.initialize(world);
         }
