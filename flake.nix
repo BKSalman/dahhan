@@ -38,10 +38,10 @@
           wayland
 
           # WINIT_UNIX_BACKEND=x11
-          xorg.libXcursor
-          xorg.libXrandr
-          xorg.libXi
-          xorg.libX11
+          libXcursor
+          libXrandr
+          libXi
+          libX11
         ];
 
         packages = pkgs: buildInputs;
