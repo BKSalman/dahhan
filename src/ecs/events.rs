@@ -209,14 +209,15 @@ impl<E: Event> SystemParam for EventReader<'_, '_, E> {
         <(Local<'static, usize>, Res<'static, Events<E>>) as SystemParam>::init_state(world)
     }
 
-    fn get_param<'w, 's>(
-        world: &'w mut super::world::World,
+    unsafe fn get_param<'w, 's>(
+        world: super::world::UnsafeWorldCell<'w>,
         state: &'s mut Self::State,
     ) -> Self::Item<'w, 's> {
-        let (cursor, events) =
+        let (cursor, events) = unsafe {
             <(Local<'static, usize>, Res<'static, Events<E>>) as SystemParam>::get_param(
                 world, state,
-            );
+            )
+        };
 
         EventReader { cursor, events }
     }
@@ -235,11 +236,12 @@ impl<E: Event> SystemParam for EventWriter<'_, E> {
         <ResMut<'static, Events<E>> as SystemParam>::init_state(world)
     }
 
-    fn get_param<'w, 's>(
-        world: &'w mut super::world::World,
+    unsafe fn get_param<'w, 's>(
+        world: super::world::UnsafeWorldCell<'w>,
         state: &'s mut Self::State,
     ) -> Self::Item<'w, 's> {
-        let events = <ResMut<'static, Events<E>> as SystemParam>::get_param(world, state);
+        let events =
+            unsafe { <ResMut<'static, Events<E>> as SystemParam>::get_param(world, state) };
 
         EventWriter { events }
     }
@@ -284,6 +286,6 @@ mod tests {
 
         state.initialize();
 
-        state.scheduler.run(&mut state.world);
+        state.scheduler.run(state.world.as_unsafe_world_cell());
     }
 }

@@ -1,5 +1,6 @@
 use std::{
     any::{Any, TypeId},
+    marker::PhantomData,
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
@@ -12,6 +13,85 @@ use super::{
     generational_array::GenerationalIndexAllocator,
     query::{ComponentAccessor, Query},
 };
+
+#[derive(Copy, Clone)]
+pub struct UnsafeWorldCell<'w> {
+    world: *mut World,
+    phantom: PhantomData<&'w World>,
+}
+
+impl<'w> UnsafeWorldCell<'w> {
+    pub unsafe fn read_resource<T: Any + 'static>(
+        self,
+    ) -> Result<RwLockReadGuard<'w, T>, anyhow::Error> {
+        let resource = unsafe {
+            (*self.world).resources.get::<RwLock<T>>().ok_or_else(|| {
+                anyhow::anyhow!("No such resource {:?}", TypeId::of::<RwLock<T>>())
+            })?
+        };
+
+        Ok(resource.read().unwrap())
+    }
+
+    pub unsafe fn write_resource<T: Any + 'static>(
+        self,
+    ) -> Result<RwLockWriteGuard<'w, T>, anyhow::Error> {
+        let resource = unsafe {
+            (*self.world).resources.get::<RwLock<T>>().ok_or_else(|| {
+                anyhow::anyhow!("No such resource {:?}", TypeId::of::<RwLock<T>>())
+            })?
+        };
+
+        Ok(resource.write().unwrap())
+    }
+
+    pub fn components_info(self) -> &'w ComponentsInfo {
+        unsafe { &(*self.world).components_info }
+    }
+
+    pub unsafe fn get_component<T: 'static>(self, entity: Entity) -> Option<&'w T> {
+        unsafe {
+            let component_info = (*self.world)
+                .components_info
+                .get_by_type_id(TypeId::of::<T>())
+                .unwrap();
+
+            (*self.world)
+                .components
+                .get(component_info.id())
+                .and_then(|c| c.get(entity))
+        }
+    }
+
+    pub unsafe fn get_component_mut<T: 'static>(self, entity: Entity) -> Option<&'w mut T> {
+        unsafe {
+            let component_info = (*self.world)
+                .components_info
+                .get_by_type_id(TypeId::of::<T>())
+                .unwrap();
+
+            (*self.world)
+                .components
+                .get_mut(component_info.id())
+                .and_then(|c| c.get_mut(entity))
+        }
+    }
+
+    pub fn entities<T: 'static>(self) -> Vec<Entity> {
+        unsafe {
+            let component_info = (*self.world)
+                .components_info
+                .get_by_type_id(TypeId::of::<T>())
+                .unwrap();
+
+            (*self.world)
+                .components
+                .get(component_info.id())
+                .map(|c| c.entities())
+                .unwrap_or_default()
+        }
+    }
+}
 
 pub struct World {
     entity_allocator: GenerationalIndexAllocator,
@@ -111,8 +191,9 @@ impl World {
     }
 
     pub fn query<T: ComponentAccessor>(&mut self) -> Query<'_, T> {
-        let entities = T::entities(self);
-        Query::new(self, entities)
+        let world = self.as_unsafe_world_cell();
+        let entities = T::entities(world);
+        Query::new(world, entities)
     }
 
     pub fn send_event<E: Event>(&mut self, event: E) {
@@ -132,6 +213,13 @@ impl World {
         let registry = self.read_resource::<EventRegistry>().unwrap();
         unsafe {
             registry.update_events(&mut *this);
+        }
+    }
+
+    pub(crate) fn as_unsafe_world_cell(&mut self) -> UnsafeWorldCell<'_> {
+        UnsafeWorldCell {
+            world: std::ptr::from_mut(self),
+            phantom: PhantomData,
         }
     }
 }

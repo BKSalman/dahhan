@@ -189,7 +189,7 @@ impl winit::application::ApplicationHandler for State {
 
         self.initialize();
 
-        self.scheduler.startup(&mut self.world);
+        self.scheduler.startup(self.world.as_unsafe_world_cell());
     }
 
     fn window_event(
@@ -219,7 +219,7 @@ impl winit::application::ApplicationHandler for State {
                 });
             }
             WindowEvent::RedrawRequested => {
-                self.scheduler.run(&mut self.world);
+                self.scheduler.run(self.world.as_unsafe_world_cell());
 
                 {
                     let mut input = self.world.write_resource::<Input>().unwrap();

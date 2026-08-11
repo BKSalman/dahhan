@@ -4,7 +4,7 @@ use std::{
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
-use crate::World;
+use crate::{World, ecs::world::UnsafeWorldCell};
 
 type StoredSystem = Box<dyn System>;
 
@@ -17,11 +17,14 @@ pub trait SystemParam {
 
     fn init_state(world: &mut World) -> Self::State;
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's>;
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's>;
 }
 
 pub trait System {
-    fn run(&mut self, world: &mut World);
+    unsafe fn run_unsafe(&mut self, world: UnsafeWorldCell<'_>);
     fn initialize(&mut self, world: &mut World);
 }
 
@@ -49,7 +52,10 @@ impl SystemParam for () {
         ()
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
         let _ = state;
         let _ = world;
         ()
@@ -65,16 +71,12 @@ impl<T1: SystemParam, T2: SystemParam> SystemParam for (T1, T2) {
         (T1::init_state(world), T2::init_state(world))
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
         let (state1, state2) = state;
-        let world_ref = std::ptr::from_mut(world);
-        // FIXME: idk what I'm doing, I probably should not use unsafe here or something
-        unsafe {
-            (
-                T1::get_param(&mut *world_ref, state1),
-                T2::get_param(&mut *world_ref, state2),
-            )
-        }
+        unsafe { (T1::get_param(world, state1), T2::get_param(world, state2)) }
     }
 }
 
@@ -95,15 +97,16 @@ impl<T1: SystemParam, T2: SystemParam, T3: SystemParam> SystemParam for (T1, T2,
         )
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
         let (state1, state2, state3) = state;
-        let world_ref = std::ptr::from_mut(world);
-        // FIXME: idk what I'm doing, I probably should not use unsafe here or something
         unsafe {
             (
-                T1::get_param(&mut *world_ref, state1),
-                T2::get_param(&mut *world_ref, state2),
-                T3::get_param(&mut *world_ref, state3),
+                T1::get_param(world, state1),
+                T2::get_param(world, state2),
+                T3::get_param(world, state3),
             )
         }
     }
@@ -130,16 +133,17 @@ impl<T1: SystemParam, T2: SystemParam, T3: SystemParam, T4: SystemParam> SystemP
         )
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
         let (state1, state2, state3, state4) = state;
-        let world_ref = std::ptr::from_mut(world);
-        // FIXME: idk what I'm doing, I probably should not use unsafe here or something
         unsafe {
             (
-                T1::get_param(&mut *world_ref, state1),
-                T2::get_param(&mut *world_ref, state2),
-                T3::get_param(&mut *world_ref, state3),
-                T4::get_param(&mut *world_ref, state4),
+                T1::get_param(world, state1),
+                T2::get_param(world, state2),
+                T3::get_param(world, state3),
+                T4::get_param(world, state4),
             )
         }
     }
@@ -158,15 +162,20 @@ impl Scheduler {
         }
     }
 
-    pub fn startup(&mut self, world: &mut World) {
+    pub fn startup(&mut self, world: UnsafeWorldCell<'_>) {
         for system in &mut self.startup_systems {
-            system.run(world);
+            unsafe {
+                system.run_unsafe(world);
+            }
         }
     }
 
-    pub fn run(&mut self, world: &mut World) {
+    pub fn run(&mut self, world: UnsafeWorldCell<'_>) {
         for system in &mut self.systems {
-            system.run(world);
+            // SAFETY:
+            unsafe {
+                system.run_unsafe(world);
+            }
         }
     }
 
@@ -218,13 +227,15 @@ where
 }
 
 impl<Marker: 'static, F: SystemParamFunction<Marker>> System for FunctionSystem<Marker, F> {
-    fn run(&mut self, world: &mut World) {
+    unsafe fn run_unsafe(&mut self, world: UnsafeWorldCell<'_>) {
         let param = &mut self
             .state
             .as_mut()
             .expect("params were not initialized")
             .param;
-        let param_state = F::Param::get_param(world, param);
+
+        let param_state = unsafe { F::Param::get_param(world, param) };
+
         self.f.run(param_state);
     }
 
@@ -379,9 +390,14 @@ impl<'a, T: 'static> SystemParam for Res<'a, T> {
         ()
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
-        let _ = state;
-        Res(world.read_resource::<T>().expect("Resource not found"))
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
+        unsafe {
+            let _ = state;
+            Res(world.read_resource::<T>().expect("Resource not found"))
+        }
     }
 }
 
@@ -419,9 +435,14 @@ impl<'a, T: 'static> SystemParam for ResMut<'a, T> {
         ()
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
-        let _ = state;
-        ResMut(world.write_resource::<T>().expect("Resource not found"))
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
+        unsafe {
+            let _ = state;
+            ResMut(world.write_resource::<T>().expect("Resource not found"))
+        }
     }
 }
 
@@ -454,7 +475,10 @@ impl<'a, T: Default + 'static> SystemParam for Local<'a, T> {
         T::default()
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, state: &'s mut Self::State) -> Self::Item<'w, 's> {
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
         let _ = world;
         Local(state)
     }
@@ -496,7 +520,7 @@ mod tests {
 
         scheduler.add_system(panic);
 
-        scheduler.run(&mut world);
+        scheduler.run(world.as_unsafe_world_cell());
     }
 
     #[test]
@@ -516,6 +540,6 @@ mod tests {
 
         scheduler.initialize(&mut world);
 
-        scheduler.run(&mut world);
+        scheduler.run(world.as_unsafe_world_cell());
     }
 }

@@ -1,4 +1,4 @@
-use dahhan::{camera::Camera, ecs::Component, prelude::*, App, WindowResized};
+use dahhan::{App, WindowResized, camera::Camera, ecs::Component, prelude::*};
 use glam::{Vec2, Vec3};
 
 struct Background;
@@ -149,10 +149,11 @@ fn main() {
         },
     ));
 
-    app.register_component::<Background>();
-    app.register_component::<Ball>();
-    app.register_component::<Player1>();
-    app.register_component::<Player2>();
+    app = app
+        .register_component::<Background>()
+        .register_component::<Ball>()
+        .register_component::<Player1>()
+        .register_component::<Player2>();
 
     app.add_entity((
         Background,
@@ -213,12 +214,13 @@ fn main() {
         },
     ));
 
-    app.add_system(move_player1);
-    app.add_system(move_player2);
-    app.add_system(ball_collision);
-    app.add_system(ball_scoring);
-    app.add_system(move_ball);
-    app.add_system(resize_background);
+    app = app
+        .add_system(move_player1)
+        .add_system(move_player2)
+        .add_system(ball_collision)
+        .add_system(ball_scoring)
+        .add_system(move_ball)
+        .add_system(resize_background);
 
     app.run().unwrap();
 }

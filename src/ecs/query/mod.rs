@@ -1,24 +1,28 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::marker::PhantomData;
 
-use crate::World;
+use crate::{World, ecs::world::UnsafeWorldCell};
 
-use super::{entity::Entity, scheduler::SystemParam, Component};
+use super::{Component, entity::Entity, scheduler::SystemParam};
 
 pub trait ComponentAccessor {
     type Output<'new>;
 
-    fn get_component(world: &mut World, entity: Entity) -> Option<Self::Output<'_>>;
-    fn entities(world: &mut World) -> Vec<Entity>;
+    unsafe fn get_component<'w>(
+        world: UnsafeWorldCell<'w>,
+        entity: Entity,
+    ) -> Option<Self::Output<'w>>;
+
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity>;
 }
 
-pub struct Query<'a, T> {
-    world: *mut World,
+pub struct Query<'w, T> {
+    world: UnsafeWorldCell<'w>,
     entities: Vec<Entity>,
-    _marker: PhantomData<&'a T>,
+    _marker: PhantomData<&'w T>,
 }
 
-impl<'a, T> Query<'a, T> {
-    pub(crate) fn new(world: &'a mut World, entities: Vec<Entity>) -> Self {
+impl<'w, T> Query<'w, T> {
+    pub(crate) fn new(world: UnsafeWorldCell<'w>, entities: Vec<Entity>) -> Self {
         Self {
             world,
             entities,
@@ -27,10 +31,10 @@ impl<'a, T> Query<'a, T> {
     }
 }
 
-impl<'a, T: ComponentAccessor> Query<'a, T> {
-    pub fn iter(self) -> impl Iterator<Item = (Entity, T::Output<'a>)> + 'a {
+impl<'w, T: ComponentAccessor> Query<'w, T> {
+    pub fn iter(self) -> impl Iterator<Item = (Entity, T::Output<'w>)> + 'w {
         self.entities.into_iter().filter_map(move |entity| unsafe {
-            Some((entity, T::get_component(&mut *self.world, entity)?))
+            Some((entity, T::get_component(self.world, entity)?))
         })
     }
 }
@@ -44,7 +48,10 @@ impl<T: ComponentAccessor + 'static> SystemParam for Query<'_, T> {
         ()
     }
 
-    fn get_param<'w, 's>(world: &'w mut World, _state: &'s mut Self::State) -> Self::Item<'w, 's> {
+    unsafe fn get_param<'w, 's>(
+        world: UnsafeWorldCell<'w>,
+        _state: &'s mut Self::State,
+    ) -> Self::Item<'w, 's> {
         let entities = T::entities(world);
         Query::new(world, entities)
     }
@@ -53,11 +60,14 @@ impl<T: ComponentAccessor + 'static> SystemParam for Query<'_, T> {
 impl<T: ComponentAccessor + 'static> ComponentAccessor for Query<'_, T> {
     type Output<'new> = T::Output<'new>;
 
-    fn get_component(world: &mut World, entity: Entity) -> Option<Self::Output<'_>> {
-        T::get_component(world, entity)
+    unsafe fn get_component(
+        world: UnsafeWorldCell<'_>,
+        entity: Entity,
+    ) -> Option<Self::Output<'_>> {
+        unsafe { T::get_component(world, entity) }
     }
 
-    fn entities(world: &mut World) -> Vec<Entity> {
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
         T::entities(world)
     }
 }
@@ -67,29 +77,15 @@ pub struct Read<T>(PhantomData<T>);
 impl<T: Component> ComponentAccessor for Read<T> {
     type Output<'new> = &'new T;
 
-    fn get_component(world: &mut World, entity: Entity) -> Option<Self::Output<'_>> {
-        let component_info = world
-            .components_info
-            .get_by_type_id(TypeId::of::<T>())
-            .unwrap();
-
-        world
-            .components
-            .get(component_info.id())
-            .and_then(|c| c.get(entity))
+    unsafe fn get_component<'w>(
+        world: UnsafeWorldCell<'w>,
+        entity: Entity,
+    ) -> Option<Self::Output<'w>> {
+        unsafe { world.get_component(entity) }
     }
 
-    fn entities(world: &mut World) -> Vec<Entity> {
-        let component_info = world
-            .components_info
-            .get_by_type_id(TypeId::of::<T>())
-            .unwrap();
-
-        world
-            .components
-            .get(component_info.id())
-            .map(|c| c.entities())
-            .unwrap_or_default()
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
+        world.entities::<T>()
     }
 }
 
@@ -98,57 +94,41 @@ pub struct Write<T>(PhantomData<T>);
 impl<T: Component> ComponentAccessor for Write<T> {
     type Output<'new> = &'new mut T;
 
-    fn get_component(world: &mut World, entity: Entity) -> Option<Self::Output<'_>> {
-        let component_info = world
-            .components_info
-            .get_by_type_id(TypeId::of::<T>())
-            .unwrap();
-
-        world
-            .components
-            .get_mut(component_info.id())
-            .and_then(|c| c.get_mut(entity))
+    unsafe fn get_component<'w>(
+        world: UnsafeWorldCell<'w>,
+        entity: Entity,
+    ) -> Option<Self::Output<'w>> {
+        unsafe { world.get_component_mut(entity) }
     }
 
-    fn entities(world: &mut World) -> Vec<Entity> {
-        let component_info = world
-            .components_info
-            .get_by_type_id(TypeId::of::<T>())
-            .unwrap();
-
-        world
-            .components
-            .get(component_info.id())
-            .map(|c| c.entities())
-            .unwrap_or_default()
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
+        world.entities::<T>()
     }
 }
 
 impl<A: ComponentAccessor, B: ComponentAccessor> ComponentAccessor for (A, B) {
     type Output<'new> = (A::Output<'new>, B::Output<'new>);
 
-    fn get_component(world: &mut World, entity: Entity) -> Option<Self::Output<'_>> {
+    unsafe fn get_component<'w>(
+        world: UnsafeWorldCell<'w>,
+        entity: Entity,
+    ) -> Option<Self::Output<'w>> {
         unsafe {
-            let world_ptr = world as *mut World;
-
-            let a_component = A::get_component(&mut *world_ptr, entity)?;
-            let b_component = B::get_component(&mut *world_ptr, entity)?;
+            let a_component = A::get_component(world, entity)?;
+            let b_component = B::get_component(world, entity)?;
 
             Some((a_component, b_component))
         }
     }
 
-    fn entities(world: &mut World) -> Vec<Entity> {
-        unsafe {
-            let world_ptr = world as *mut World;
-            let entities_a = A::entities(&mut *world_ptr);
-            let entities_b = B::entities(&mut *world_ptr);
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
+        let entities_a = A::entities(world);
+        let entities_b = B::entities(world);
 
-            entities_a
-                .into_iter()
-                .filter(|e| entities_b.contains(e))
-                .collect()
-        }
+        entities_a
+            .into_iter()
+            .filter(|e| entities_b.contains(e))
+            .collect()
     }
 }
 
@@ -157,30 +137,28 @@ impl<A: ComponentAccessor, B: ComponentAccessor, C: ComponentAccessor> Component
 {
     type Output<'new> = (A::Output<'new>, B::Output<'new>, C::Output<'new>);
 
-    fn get_component(world: &mut World, entity: Entity) -> Option<Self::Output<'_>> {
+    unsafe fn get_component<'w>(
+        world: UnsafeWorldCell<'w>,
+        entity: Entity,
+    ) -> Option<Self::Output<'w>> {
         unsafe {
-            let world_ptr = world as *mut World;
-
-            let a_component = A::get_component(&mut *world_ptr, entity)?;
-            let b_component = B::get_component(&mut *world_ptr, entity)?;
-            let c_component = C::get_component(&mut *world_ptr, entity)?;
+            let a_component = A::get_component(world, entity)?;
+            let b_component = B::get_component(world, entity)?;
+            let c_component = C::get_component(world, entity)?;
 
             Some((a_component, b_component, c_component))
         }
     }
 
-    fn entities(world: &mut World) -> Vec<Entity> {
-        unsafe {
-            let world_ptr = world as *mut World;
-            let entities_a = A::entities(&mut *world_ptr);
-            let entities_b = B::entities(&mut *world_ptr);
-            let entities_c = C::entities(&mut *world_ptr);
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
+        let entities_a = A::entities(world);
+        let entities_b = B::entities(world);
+        let entities_c = C::entities(world);
 
-            entities_a
-                .into_iter()
-                .filter(|e| entities_b.contains(e) && entities_c.contains(e))
-                .collect()
-        }
+        entities_a
+            .into_iter()
+            .filter(|e| entities_b.contains(e) && entities_c.contains(e))
+            .collect()
     }
 }
 
