@@ -1,10 +1,14 @@
 use std::{
+    collections::HashSet,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::{RwLockReadGuard, RwLockWriteGuard},
 };
 
-use crate::{World, ecs::world::UnsafeWorldCell};
+use crate::{
+    World,
+    ecs::{component::ComponentId, world::UnsafeWorldCell},
+};
 
 type StoredSystem = Box<dyn System>;
 
@@ -16,6 +20,8 @@ pub trait SystemParam {
     type Item<'world, 'state>: SystemParam<State = Self::State>;
 
     fn init_state(world: &mut World) -> Self::State;
+
+    fn init_access(world: &mut World, access: &mut Access);
 
     unsafe fn get_param<'w, 's>(
         world: UnsafeWorldCell<'w>,
@@ -52,6 +58,8 @@ impl SystemParam for () {
         ()
     }
 
+    fn init_access(_world: &mut World, _access: &mut Access) {}
+
     unsafe fn get_param<'w, 's>(
         world: UnsafeWorldCell<'w>,
         state: &'s mut Self::State,
@@ -69,6 +77,11 @@ impl<T1: SystemParam, T2: SystemParam> SystemParam for (T1, T2) {
 
     fn init_state(world: &mut World) -> Self::State {
         (T1::init_state(world), T2::init_state(world))
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        T1::init_access(world, access);
+        T2::init_access(world, access);
     }
 
     unsafe fn get_param<'w, 's>(
@@ -95,6 +108,12 @@ impl<T1: SystemParam, T2: SystemParam, T3: SystemParam> SystemParam for (T1, T2,
             T2::init_state(world),
             T3::init_state(world),
         )
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        T1::init_access(world, access);
+        T2::init_access(world, access);
+        T3::init_access(world, access);
     }
 
     unsafe fn get_param<'w, 's>(
@@ -131,6 +150,13 @@ impl<T1: SystemParam, T2: SystemParam, T3: SystemParam, T4: SystemParam> SystemP
             T3::init_state(world),
             T4::init_state(world),
         )
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        T1::init_access(world, access);
+        T2::init_access(world, access);
+        T3::init_access(world, access);
+        T4::init_access(world, access);
     }
 
     unsafe fn get_param<'w, 's>(
@@ -203,8 +229,62 @@ impl Scheduler {
     }
 }
 
+#[derive(Debug)]
+pub struct Access {
+    reads: Vec<ComponentId>,
+    writes: Vec<ComponentId>,
+}
+
+impl Access {
+    pub fn new() -> Self {
+        Self {
+            reads: Vec::new(),
+            writes: Vec::new(),
+        }
+    }
+
+    pub fn add_write(&mut self, component_id: ComponentId) {
+        self.writes.push(component_id);
+    }
+
+    pub fn add_read(&mut self, component_id: ComponentId) {
+        self.reads.push(component_id);
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.reads.extend(other.reads);
+        self.writes.extend(other.writes);
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        for write_comp in &self.writes {
+            if let Some(component) = self.reads.iter().find(|r| *r == write_comp) {
+                return Err(format!(
+                    "uh oh, writing and reading component: {component:?}",
+                ));
+            }
+        }
+
+        let mut seen = HashSet::new();
+        let mut dupes = HashSet::new();
+        for comp in &self.writes {
+            if !seen.insert(comp) {
+                dupes.insert(comp.clone());
+            }
+        }
+
+        if !dupes.is_empty() {
+            return Err(format!(
+                "uh oh duplicate writes on same component: {dupes:?}",
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 pub struct FunctionSystemState<P: SystemParam> {
-    param: P::State,
+    param_state: P::State,
 }
 
 pub struct FunctionSystem<Input, F>
@@ -232,7 +312,7 @@ impl<Marker: 'static, F: SystemParamFunction<Marker>> System for FunctionSystem<
             .state
             .as_mut()
             .expect("params were not initialized")
-            .param;
+            .param_state;
 
         let param_state = unsafe { F::Param::get_param(world, param) };
 
@@ -240,8 +320,15 @@ impl<Marker: 'static, F: SystemParamFunction<Marker>> System for FunctionSystem<
     }
 
     fn initialize(&mut self, world: &mut World) {
+        let mut access = Access::new();
+        F::Param::init_access(world, &mut access);
+
+        if let Err(conflict) = access.validate() {
+            panic!("{conflict}");
+        }
+
         self.state = Some(FunctionSystemState {
-            param: F::Param::init_state(world),
+            param_state: F::Param::init_state(world),
         });
     }
 }
@@ -390,6 +477,8 @@ impl<'a, T: 'static> SystemParam for Res<'a, T> {
         ()
     }
 
+    fn init_access(_world: &mut World, _accesss: &mut Access) {}
+
     unsafe fn get_param<'w, 's>(
         world: UnsafeWorldCell<'w>,
         state: &'s mut Self::State,
@@ -435,6 +524,8 @@ impl<'a, T: 'static> SystemParam for ResMut<'a, T> {
         ()
     }
 
+    fn init_access(_world: &mut World, _accesss: &mut Access) {}
+
     unsafe fn get_param<'w, 's>(
         world: UnsafeWorldCell<'w>,
         state: &'s mut Self::State,
@@ -475,6 +566,8 @@ impl<'a, T: Default + 'static> SystemParam for Local<'a, T> {
         T::default()
     }
 
+    fn init_access(_world: &mut World, _accesss: &mut Access) {}
+
     unsafe fn get_param<'w, 's>(
         world: UnsafeWorldCell<'w>,
         state: &'s mut Self::State,
@@ -488,7 +581,7 @@ impl<'a, T: Default + 'static> SystemParam for Local<'a, T> {
 mod tests {
     use crate::ecs::{
         component::Component,
-        query::{Query, Read},
+        query::{Query, Read, Write},
     };
 
     use super::*;
@@ -510,6 +603,14 @@ mod tests {
 
     fn panic() {
         panic!("hello");
+    }
+
+    fn double_write(_lmao: Query<(Write<SomeComponent>, Write<SomeComponent>)>) {
+        eprintln!("I should not run");
+    }
+
+    fn write_read(_lmao: Query<(Read<SomeComponent>, Write<SomeComponent>)>) {
+        eprintln!("I should not run");
     }
 
     #[test]
@@ -537,6 +638,44 @@ mod tests {
         scheduler.add_system(something);
 
         scheduler.add_system(something_else);
+
+        scheduler.initialize(&mut world);
+
+        scheduler.run(world.as_unsafe_world_cell());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_access_validation_same_component_multiple_writes() {
+        let mut world = World::new();
+        let mut scheduler = Scheduler::new();
+
+        world.register_component::<SomeComponent>();
+
+        let e1 = world.add_entity(());
+
+        world.add_component(e1, SomeComponent(1));
+
+        scheduler.add_system(double_write);
+
+        scheduler.initialize(&mut world);
+
+        scheduler.run(world.as_unsafe_world_cell());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_access_validation_same_component_write_read() {
+        let mut world = World::new();
+        let mut scheduler = Scheduler::new();
+
+        world.register_component::<SomeComponent>();
+
+        let e1 = world.add_entity(());
+
+        world.add_component(e1, SomeComponent(1));
+
+        scheduler.add_system(write_read);
 
         scheduler.initialize(&mut world);
 

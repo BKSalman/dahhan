@@ -2,7 +2,11 @@ use std::marker::PhantomData;
 
 use crate::{World, ecs::world::UnsafeWorldCell};
 
-use super::{Component, entity::Entity, scheduler::SystemParam};
+use super::{
+    Component,
+    entity::Entity,
+    scheduler::{Access, SystemParam},
+};
 
 pub trait ComponentAccessor {
     type Output<'new>;
@@ -11,6 +15,8 @@ pub trait ComponentAccessor {
         world: UnsafeWorldCell<'w>,
         entity: Entity,
     ) -> Option<Self::Output<'w>>;
+
+    fn init_access(world: &mut World, access: &mut Access);
 
     fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity>;
 }
@@ -48,27 +54,25 @@ impl<T: ComponentAccessor + 'static> SystemParam for Query<'_, T> {
         ()
     }
 
+    fn init_access(world: &mut World, access: &mut Access) {
+        let mut query_access = Access::new();
+        T::init_access(world, &mut query_access);
+
+        eprintln!("{query_access:?}");
+
+        if let Err(conflict) = query_access.validate() {
+            panic!("{conflict}");
+        }
+
+        access.extend(query_access);
+    }
+
     unsafe fn get_param<'w, 's>(
         world: UnsafeWorldCell<'w>,
         _state: &'s mut Self::State,
     ) -> Self::Item<'w, 's> {
         let entities = T::entities(world);
         Query::new(world, entities)
-    }
-}
-
-impl<T: ComponentAccessor + 'static> ComponentAccessor for Query<'_, T> {
-    type Output<'new> = T::Output<'new>;
-
-    unsafe fn get_component(
-        world: UnsafeWorldCell<'_>,
-        entity: Entity,
-    ) -> Option<Self::Output<'_>> {
-        unsafe { T::get_component(world, entity) }
-    }
-
-    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
-        T::entities(world)
     }
 }
 
@@ -82,6 +86,15 @@ impl<T: Component> ComponentAccessor for Read<T> {
         entity: Entity,
     ) -> Option<Self::Output<'w>> {
         unsafe { world.get_component(entity) }
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        let component_info = world
+            .components_info
+            .get::<T>()
+            .expect("should be regisetered");
+
+        access.add_read(component_info.id());
     }
 
     fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
@@ -99,6 +112,15 @@ impl<T: Component> ComponentAccessor for Write<T> {
         entity: Entity,
     ) -> Option<Self::Output<'w>> {
         unsafe { world.get_component_mut(entity) }
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        let component_info = world
+            .components_info
+            .get::<T>()
+            .expect("should be regisetered");
+
+        access.add_write(component_info.id());
     }
 
     fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
@@ -119,6 +141,11 @@ impl<A: ComponentAccessor, B: ComponentAccessor> ComponentAccessor for (A, B) {
 
             Some((a_component, b_component))
         }
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        A::init_access(world, access);
+        B::init_access(world, access);
     }
 
     fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
@@ -148,6 +175,12 @@ impl<A: ComponentAccessor, B: ComponentAccessor, C: ComponentAccessor> Component
 
             Some((a_component, b_component, c_component))
         }
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        A::init_access(world, access);
+        B::init_access(world, access);
+        C::init_access(world, access);
     }
 
     fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
@@ -323,5 +356,33 @@ mod tests {
 
         assert_eq!(results[0].1.0, 101);
         assert_eq!(results[1].1.0, 102);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_access_validation_same_component_multiple_writes() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+
+        let e1 = world.add_entity(());
+
+        world.add_component(e1, SomeComponent(1));
+
+        let _ = world.query::<(Write<SomeComponent>, Write<SomeComponent>)>();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_access_validation_same_component_write_read() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+
+        let e1 = world.add_entity(());
+
+        world.add_component(e1, SomeComponent(1));
+
+        let _ = world.query::<(Write<SomeComponent>, Read<SomeComponent>)>();
     }
 }

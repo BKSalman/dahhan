@@ -209,6 +209,8 @@ impl<E: Event> SystemParam for EventReader<'_, '_, E> {
         <(Local<'static, usize>, Res<'static, Events<E>>) as SystemParam>::init_state(world)
     }
 
+    fn init_access(world: &mut World, access: &mut super::scheduler::Access) {}
+
     unsafe fn get_param<'w, 's>(
         world: super::world::UnsafeWorldCell<'w>,
         state: &'s mut Self::State,
@@ -235,6 +237,8 @@ impl<E: Event> SystemParam for EventWriter<'_, E> {
     fn init_state(world: &mut super::world::World) -> Self::State {
         <ResMut<'static, Events<E>> as SystemParam>::init_state(world)
     }
+
+    fn init_access(world: &mut World, access: &mut super::scheduler::Access) {}
 
     unsafe fn get_param<'w, 's>(
         world: super::world::UnsafeWorldCell<'w>,

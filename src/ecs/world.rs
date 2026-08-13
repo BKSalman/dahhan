@@ -4,7 +4,10 @@ use std::{
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use crate::anymap::AnyMap;
+use crate::{
+    anymap::AnyMap,
+    ecs::scheduler::{Access, SystemParam},
+};
 
 use super::{
     component::{Component, Components, ComponentsInfo, TupleAddComponent},
@@ -190,10 +193,16 @@ impl World {
             .unwrap_or([].iter())
     }
 
-    pub fn query<T: ComponentAccessor>(&mut self) -> Query<'_, T> {
-        let world = self.as_unsafe_world_cell();
-        let entities = T::entities(world);
-        Query::new(world, entities)
+    pub fn query<T: ComponentAccessor + 'static>(&mut self) -> Query<'_, T> {
+        let mut state = <Query<'_, T> as SystemParam>::init_state(self);
+        let mut access = Access::new();
+        <Query<'_, T> as SystemParam>::init_access(self, &mut access);
+
+        if let Err(conflict) = access.validate() {
+            panic!("{conflict}");
+        }
+
+        unsafe { <Query<'_, T> as SystemParam>::get_param(self.as_unsafe_world_cell(), &mut state) }
     }
 
     pub fn send_event<E: Event>(&mut self, event: E) {
