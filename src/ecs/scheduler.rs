@@ -198,7 +198,6 @@ impl Scheduler {
 
     pub fn run(&mut self, world: UnsafeWorldCell<'_>) {
         for system in &mut self.systems {
-            // SAFETY:
             unsafe {
                 system.run_unsafe(world);
             }
@@ -614,12 +613,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "hello")]
     fn test_systems_work() {
         let mut world = World::new();
         let mut scheduler = Scheduler::new();
 
         scheduler.add_system(panic);
+
+        scheduler.initialize(&mut world);
 
         scheduler.run(world.as_unsafe_world_cell());
     }
@@ -645,16 +646,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "uh oh duplicate writes on same component: {ComponentId(0)}")]
     fn test_access_validation_same_component_multiple_writes() {
         let mut world = World::new();
         let mut scheduler = Scheduler::new();
 
         world.register_component::<SomeComponent>();
 
-        let e1 = world.add_entity(());
-
-        world.add_component(e1, SomeComponent(1));
+        world.add_entity(SomeComponent(1));
 
         scheduler.add_system(double_write);
 
@@ -664,16 +663,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "uh oh, writing and reading component: ComponentId(0)")]
     fn test_access_validation_same_component_write_read() {
         let mut world = World::new();
         let mut scheduler = Scheduler::new();
 
         world.register_component::<SomeComponent>();
 
-        let e1 = world.add_entity(());
-
-        world.add_component(e1, SomeComponent(1));
+        world.add_entity(SomeComponent(1));
 
         scheduler.add_system(write_read);
 
