@@ -247,4 +247,81 @@ mod tests {
             query.iter().next()
         );
     }
+
+    #[test]
+    fn test_concurrent_write_different_components_soundness() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+        world.register_component::<SomeOtherComponent>();
+
+        let entity = world.add_entity(());
+
+        world.add_component(entity, SomeComponent(10));
+        world.add_component(entity, SomeOtherComponent(20));
+
+        let cell = world.as_unsafe_world_cell();
+
+        unsafe {
+            let a = cell.get_component_mut::<SomeComponent>(entity).unwrap();
+            let b = cell
+                .get_component_mut::<SomeOtherComponent>(entity)
+                .unwrap();
+
+            a.0 += 1;
+            b.0 += 1;
+
+            assert_eq!(a.0, 11);
+            assert_eq!(b.0, 21);
+        }
+    }
+
+    #[test]
+    fn test_concurrent_read_and_write_different_components_soundness() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+        world.register_component::<SomeOtherComponent>();
+
+        let entity = world.add_entity(());
+
+        world.add_component(entity, SomeComponent(10));
+        world.add_component(entity, SomeOtherComponent(20));
+
+        let cell = world.as_unsafe_world_cell();
+
+        unsafe {
+            let a = cell.get_component::<SomeComponent>(entity).unwrap();
+            let b = cell
+                .get_component_mut::<SomeOtherComponent>(entity)
+                .unwrap();
+
+            b.0 += 1;
+
+            assert_eq!(a.0, 10);
+            assert_eq!(b.0, 21);
+        }
+    }
+
+    #[test]
+    fn test_write_query_multiple_entities_soundness() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+
+        let e1 = world.add_entity(());
+        let e2 = world.add_entity(());
+
+        world.add_component(e1, SomeComponent(1));
+        world.add_component(e2, SomeComponent(2));
+
+        let query = world.query::<Write<SomeComponent>>();
+        let mut results: Vec<(Entity, &mut SomeComponent)> = query.iter().collect();
+
+        results[0].1.0 += 100;
+        results[1].1.0 += 100;
+
+        assert_eq!(results[0].1.0, 101);
+        assert_eq!(results[1].1.0, 102);
+    }
 }
