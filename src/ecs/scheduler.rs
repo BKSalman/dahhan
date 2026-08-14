@@ -578,10 +578,7 @@ impl<'a, T: Default + 'static> SystemParam for Local<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ecs::{
-        component::Component,
-        query::{Query, Read, Write},
-    };
+    use crate::ecs::{component::Component, query::Query};
 
     use super::*;
 
@@ -590,11 +587,11 @@ mod tests {
 
     impl Component for SomeComponent {}
 
-    fn something(lmao: Query<Read<SomeComponent>>) {
+    fn something(lmao: Query<&SomeComponent>) {
         assert!(lmao.iter().count() == 10);
     }
 
-    fn something_else(lmao: Query<Read<SomeComponent>>) {
+    fn something_else(lmao: Query<&SomeComponent>) {
         for (i, (_e, component)) in lmao.iter().enumerate() {
             assert_eq!(component.0, i as u32);
         }
@@ -604,11 +601,11 @@ mod tests {
         panic!("hello");
     }
 
-    fn double_write(_lmao: Query<(Write<SomeComponent>, Write<SomeComponent>)>) {
+    fn double_write(_lmao: Query<(&mut SomeComponent, &mut SomeComponent)>) {
         eprintln!("I should not run");
     }
 
-    fn write_read(_lmao: Query<(Read<SomeComponent>, Write<SomeComponent>)>) {
+    fn write_read(_lmao: Query<(&SomeComponent, &mut SomeComponent)>) {
         eprintln!("I should not run");
     }
 

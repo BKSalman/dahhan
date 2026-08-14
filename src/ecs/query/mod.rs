@@ -100,6 +100,25 @@ impl<T: Component> ComponentAccessor for Read<T> {
     }
 }
 
+impl<T: Component> ComponentAccessor for &T {
+    type Output<'new> = &'new T;
+
+    unsafe fn get_component<'w>(
+        world: UnsafeWorldCell<'w>,
+        entity: Entity,
+    ) -> Option<Self::Output<'w>> {
+        unsafe { <Read<T> as ComponentAccessor>::get_component(world, entity) }
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        <Read<T> as ComponentAccessor>::init_access(world, access)
+    }
+
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
+        <Read<T> as ComponentAccessor>::entities(world)
+    }
+}
+
 pub struct Write<T>(PhantomData<T>);
 
 impl<T: Component> ComponentAccessor for Write<T> {
@@ -123,6 +142,25 @@ impl<T: Component> ComponentAccessor for Write<T> {
 
     fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
         world.entities::<T>()
+    }
+}
+
+impl<T: Component> ComponentAccessor for &mut T {
+    type Output<'new> = &'new mut T;
+
+    unsafe fn get_component<'w>(
+        world: UnsafeWorldCell<'w>,
+        entity: Entity,
+    ) -> Option<Self::Output<'w>> {
+        unsafe { <Write<T> as ComponentAccessor>::get_component(world, entity) }
+    }
+
+    fn init_access(world: &mut World, access: &mut Access) {
+        <Write<T> as ComponentAccessor>::init_access(world, access)
+    }
+
+    fn entities(world: UnsafeWorldCell<'_>) -> Vec<Entity> {
+        <Write<T> as ComponentAccessor>::entities(world)
     }
 }
 
@@ -223,6 +261,21 @@ mod tests {
     }
 
     #[test]
+    fn test_single_read_query_ref() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+
+        let entity = world.add_entity(());
+
+        world.add_component(entity, SomeComponent(10));
+
+        let query = world.query::<&SomeComponent>();
+
+        assert_eq!(Some((entity, &SomeComponent(10))), query.iter().next());
+    }
+
+    #[test]
     fn test_single_write_query() {
         let mut world = World::new();
 
@@ -233,6 +286,21 @@ mod tests {
         world.add_component(entity, SomeComponent(10));
 
         let query = world.query::<Write<SomeComponent>>();
+
+        assert_eq!(Some((entity, &mut SomeComponent(10))), query.iter().next());
+    }
+
+    #[test]
+    fn test_single_write_query_ref() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+
+        let entity = world.add_entity(());
+
+        world.add_component(entity, SomeComponent(10));
+
+        let query = world.query::<&mut SomeComponent>();
 
         assert_eq!(Some((entity, &mut SomeComponent(10))), query.iter().next());
     }
@@ -259,6 +327,27 @@ mod tests {
     }
 
     #[test]
+    fn test_two_read_query_ref() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+        world.register_component::<SomeOtherComponent>();
+
+        let entity = world.add_entity(());
+
+        world.add_component(entity, SomeComponent(10));
+
+        world.add_component(entity, SomeOtherComponent(10));
+
+        let query = world.query::<(&SomeComponent, &SomeOtherComponent)>();
+
+        assert_eq!(
+            Some((entity, (&SomeComponent(10), &SomeOtherComponent(10)))),
+            query.iter().next()
+        );
+    }
+
+    #[test]
     fn test_single_read_single_write_query() {
         let mut world = World::new();
 
@@ -272,6 +361,27 @@ mod tests {
         world.add_component(entity, SomeOtherComponent(10));
 
         let query = world.query::<(Read<SomeComponent>, Write<SomeOtherComponent>)>();
+
+        assert_eq!(
+            Some((entity, (&SomeComponent(10), &mut SomeOtherComponent(10)))),
+            query.iter().next()
+        );
+    }
+
+    #[test]
+    fn test_single_read_single_write_query_ref() {
+        let mut world = World::new();
+
+        world.register_component::<SomeComponent>();
+        world.register_component::<SomeOtherComponent>();
+
+        let entity = world.add_entity(());
+
+        world.add_component(entity, SomeComponent(10));
+
+        world.add_component(entity, SomeOtherComponent(10));
+
+        let query = world.query::<(&SomeComponent, &mut SomeOtherComponent)>();
 
         assert_eq!(
             Some((entity, (&SomeComponent(10), &mut SomeOtherComponent(10)))),

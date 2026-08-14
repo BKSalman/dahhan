@@ -20,11 +20,7 @@ struct Player2 {
 }
 impl Component for Player2 {}
 
-fn move_player1(
-    player1: Query<(Read<Player1>, Write<Transform>)>,
-    input: Res<Input>,
-    time: Res<Time>,
-) {
+fn move_player1(player1: Query<(&Player1, &mut Transform)>, input: Res<Input>, time: Res<Time>) {
     for (_e, (_player, transform)) in player1.iter() {
         if input.is_pressed(KeyCode::KeyW) {
             transform.position.y += 10000. * time.delta_time();
@@ -34,11 +30,7 @@ fn move_player1(
     }
 }
 
-fn move_player2(
-    player1: Query<(Read<Player2>, Write<Transform>)>,
-    input: Res<Input>,
-    time: Res<Time>,
-) {
+fn move_player2(player1: Query<(&Player2, &mut Transform)>, input: Res<Input>, time: Res<Time>) {
     for (_e, (_player, transform)) in player1.iter() {
         if input.is_pressed(KeyCode::ArrowUp) {
             transform.position.y += 10000. * time.delta_time();
@@ -49,9 +41,9 @@ fn move_player2(
 }
 
 fn ball_collision(
-    ball: Query<(Write<Ball>, Read<Sprite>, Read<Transform>)>,
-    player1: Query<(Read<Player1>, Read<Transform>, Read<Sprite>)>,
-    player2: Query<(Read<Player2>, Read<Transform>, Read<Sprite>)>,
+    ball: Query<(&mut Ball, &Sprite, &Transform)>,
+    player1: Query<(&Player1, &Transform, &Sprite)>,
+    player2: Query<(&Player2, &Transform, &Sprite)>,
     window: Res<Window>,
 ) {
     if let Some((_e, (ball, ball_sprite, ball_transform))) = ball.iter().next() {
@@ -81,9 +73,9 @@ fn ball_collision(
 }
 
 fn ball_scoring(
-    ball: Query<(Write<Ball>, Read<Sprite>, Write<Transform>)>,
-    player1: Query<Write<Player1>>,
-    player2: Query<Write<Player2>>,
+    ball: Query<(&mut Ball, &Sprite, &mut Transform)>,
+    player1: Query<&mut Player1>,
+    player2: Query<&mut Player2>,
     window: Res<Window>,
 ) {
     if let Some((_e, (ball, ball_sprite, ball_transform))) = ball.iter().next() {
@@ -107,7 +99,7 @@ fn ball_scoring(
     }
 }
 
-fn move_ball(ball: Query<(Read<Ball>, Write<Transform>)>, time: Res<Time>) {
+fn move_ball(ball: Query<(&Ball, &mut Transform)>, time: Res<Time>) {
     if let Some((_e, (ball, transform))) = ball.iter().next() {
         if ball.is_going_up {
             transform.position.y += 1000. * time.delta_time();
@@ -124,7 +116,7 @@ fn move_ball(ball: Query<(Read<Ball>, Write<Transform>)>, time: Res<Time>) {
 }
 
 fn resize_background(
-    background: Query<(Read<Background>, Write<Transform>, Write<Sprite>)>,
+    background: Query<(&Background, &mut Transform, &mut Sprite)>,
     mut resize_events: EventReader<WindowResized>,
 ) {
     if let Some((_e, (_background, transform, sprite))) = background.iter().next() {
