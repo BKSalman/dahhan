@@ -58,8 +58,6 @@ impl<T: ComponentAccessor + 'static> SystemParam for Query<'_, T> {
         let mut query_access = Access::new();
         T::init_access(world, &mut query_access);
 
-        eprintln!("{query_access:?}");
-
         if let Err(conflict) = query_access.validate() {
             panic!("{conflict}");
         }

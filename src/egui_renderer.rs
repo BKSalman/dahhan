@@ -43,9 +43,12 @@ impl EguiRenderer {
         let egui_renderer = Renderer::new(
             device,
             output_color_format,
-            output_depth_format,
-            msaa_samples,
-            true,
+            egui_wgpu::RendererOptions {
+                msaa_samples,
+                depth_stencil_format: output_depth_format,
+                dithering: true,
+                predictable_texture_filtering: false,
+            },
         );
 
         EguiRenderer {
@@ -71,7 +74,7 @@ impl EguiRenderer {
     ) {
         // self.state.set_pixels_per_point(window.scale_factor() as f32);
         let raw_input = self.state.take_egui_input(window);
-        let full_output = self.context.run(raw_input, |context| {
+        let full_output = self.context.run_ui(raw_input, |context| {
             run_ui(context);
         });
 
@@ -83,7 +86,7 @@ impl EguiRenderer {
             .tessellate(full_output.shapes, full_output.pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
             self.renderer
-                .update_texture(device, queue, *id, image_delta);
+                .update_texture(device, queue, *id, &image_delta[0]);
         }
         self.renderer
             .update_buffers(device, queue, encoder, &tris, &screen_descriptor);
@@ -96,11 +99,13 @@ impl EguiRenderer {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 label: Some("egui main render pass"),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             })
             .forget_lifetime();
         self.renderer.render(&mut rpass, &tris, &screen_descriptor);

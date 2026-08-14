@@ -29,11 +29,7 @@ impl SlicedBuffer {
         &self.slices
     }
 
-    pub fn write_into<'a>(
-        &'a self,
-        queue: &'a Queue,
-        size: BufferSize,
-    ) -> QueueWriteBufferView<'a> {
+    pub fn write_into<'a>(&'a self, queue: &'a Queue, size: BufferSize) -> QueueWriteBufferView {
         queue
             .write_buffer_with(&self.buffer, 0, size)
             .expect("Failed to create staging buffer for vertex data")

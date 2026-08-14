@@ -1,16 +1,13 @@
 use std::{borrow::Cow, sync::Arc};
 
-use egui_wgpu::ScreenDescriptor;
-use egui_winit::EventResponse;
 use wgpu::{
-    BindGroup, Buffer, Device, PipelineCompilationOptions, Queue, RenderPipeline, Surface,
-    SurfaceConfiguration, util::DeviceExt,
+    BindGroup, Buffer, Device, ExperimentalFeatures, PipelineCompilationOptions, Queue,
+    RenderPipeline, Surface, SurfaceConfiguration, util::DeviceExt,
 };
-use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
+use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::{
-    buffers::SlicedBuffer, camera::camera_uniform::CameraUniform, egui_renderer::EguiRenderer,
-    vertices::VertexColored,
+    buffers::SlicedBuffer, camera::camera_uniform::CameraUniform, vertices::VertexColored,
 };
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
@@ -33,19 +30,19 @@ impl UniformBuffer {
 
 pub struct Renderer {
     pub(crate) surface: Surface<'static>,
-    window: Arc<Window>,
-    config: SurfaceConfiguration,
+    pub(crate) window: Arc<Window>,
+    pub(crate) config: SurfaceConfiguration,
     pub(crate) device: Device,
     pub(crate) queue: Queue,
     pub(crate) render_pipeline: RenderPipeline,
     pub(crate) camera_bind_group: BindGroup,
     pub(crate) uniform_bind_group: BindGroup,
     pub(crate) uniform_buffer: Buffer,
-    egui_renderer: EguiRenderer,
     pub(crate) vertex_buffer: SlicedBuffer,
     pub(crate) num_indices: u32,
     pub(crate) index_buffer: SlicedBuffer,
     pub(crate) camera_buffer: wgpu::Buffer,
+    pub(crate) instance: wgpu::Instance,
     // camera_uniform: CameraUniform,
 }
 
@@ -63,6 +60,7 @@ impl Renderer {
             power_preference: wgpu::PowerPreference::default(),
             force_fallback_adapter: false,
             compatible_surface: Some(&surface),
+            apply_limit_buckets: true,
         }))
         .expect("Failed to find an appropriate adapter");
 
@@ -74,6 +72,7 @@ impl Renderer {
                 wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             trace: wgpu::Trace::Off,
+            experimental_features: ExperimentalFeatures::disabled(),
         }))
         .expect("Failed to create device");
 
@@ -146,8 +145,8 @@ impl Renderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline layout"),
-            bind_group_layouts: &[&camera_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&camera_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let swapchain_capabilities = surface.get_capabilities(&adapter);
@@ -169,7 +168,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[VertexColored::desc()],
+                buffers: &[Some(VertexColored::desc())],
                 compilation_options: PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -196,8 +195,8 @@ impl Renderer {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
             cache: None,
+            multiview_mask: None,
         });
 
         const VERTEX_BUFFER_START_CAPACITY: wgpu::BufferAddress =
@@ -225,9 +224,9 @@ impl Renderer {
         let num_indices = INDICES.len() as u32;
 
         Self {
+            instance,
             surface,
             config,
-            egui_renderer: EguiRenderer::new(&device, swapchain_format, None, 1, &window),
             device,
             render_pipeline,
             queue,
@@ -263,68 +262,6 @@ impl Renderer {
         )]));
 
         self.surface.configure(&self.device, &self.config);
-    }
-
-    pub(crate) fn update(&mut self) {
-        // TODO
-    }
-
-    pub(crate) fn draw(&mut self, egui_ui: impl FnMut(&egui::Context), clear_color: wgpu::Color) {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .expect("Failed to acquire next swap chain texture");
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        {
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            rpass.set_pipeline(&self.render_pipeline);
-            rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            rpass.set_vertex_buffer(0, self.vertex_buffer.get_slice(..));
-            rpass.set_index_buffer(self.index_buffer.get_slice(..), wgpu::IndexFormat::Uint16);
-            rpass.draw_indexed(0..self.num_indices, 0, 0..1);
-        }
-
-        // let screen_descriptor = ScreenDescriptor {
-        //     size_in_pixels: [self.config.width, self.config.height],
-        //     pixels_per_point: self.window.scale_factor() as f32,
-        // };
-
-        // self.egui_renderer.draw(
-        //     &self.device,
-        //     &self.queue,
-        //     &mut encoder,
-        //     &self.window,
-        //     &view,
-        //     screen_descriptor,
-        //     egui_ui,
-        // );
-
-        self.queue.submit(Some(encoder.finish()));
-        frame.present();
-    }
-
-    pub(crate) fn handle_egui_event(&mut self, event: &WindowEvent) -> EventResponse {
-        self.egui_renderer.handle_input(&self.window, event)
     }
 
     pub fn render_sprites(&mut self, vertices: &[VertexColored], indices: &[u16]) {

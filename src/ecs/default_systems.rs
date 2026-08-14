@@ -6,7 +6,7 @@ use crate::ecs::query::{Query, Read};
 use crate::ecs::rendering::{Sprite, Transform};
 use crate::renderer::Renderer;
 use crate::vertices::VertexColored;
-use crate::{window, WindowResized};
+use crate::{WindowResized, window};
 
 use super::events::EventReader;
 use super::query::Write;
@@ -119,11 +119,44 @@ pub(crate) fn render_sprites(
     }
 }
 
-pub(crate) fn draw(renderer: ResMut<Renderer>) {
-    let frame = renderer
-        .surface
-        .get_current_texture()
-        .expect("Failed to acquire next swap chain texture");
+pub(crate) fn draw(mut renderer: ResMut<Renderer>) {
+    let frame = match renderer.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
+        wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => {
+            drop(surface_texture);
+
+            renderer
+                .surface
+                .configure(&renderer.device, &renderer.config);
+
+            return;
+        }
+        wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+            return;
+        }
+        wgpu::CurrentSurfaceTexture::Outdated => {
+            println!("outdated");
+            renderer
+                .surface
+                .configure(&renderer.device, &renderer.config);
+            return;
+        }
+        wgpu::CurrentSurfaceTexture::Lost => {
+            println!("lost");
+            renderer.surface = renderer
+                .instance
+                .create_surface(renderer.window.clone())
+                .unwrap();
+            renderer
+                .surface
+                .configure(&renderer.device, &renderer.config);
+            return;
+        }
+        wgpu::CurrentSurfaceTexture::Validation => {
+            unreachable!("validation");
+        }
+    };
+
     let view = frame
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
@@ -142,10 +175,12 @@ pub(crate) fn draw(renderer: ResMut<Renderer>) {
                     load: wgpu::LoadOp::Clear(Color::BLACK),
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         rpass.set_pipeline(&renderer.render_pipeline);
         rpass.set_bind_group(0, &renderer.camera_bind_group, &[]);
@@ -158,5 +193,5 @@ pub(crate) fn draw(renderer: ResMut<Renderer>) {
     }
 
     renderer.queue.submit(Some(encoder.finish()));
-    frame.present();
+    renderer.queue.present(frame);
 }
