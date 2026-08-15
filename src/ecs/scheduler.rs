@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::{RwLockReadGuard, RwLockWriteGuard},
@@ -264,17 +263,13 @@ impl Access {
             }
         }
 
-        let mut seen = HashSet::new();
-        let mut dupes = HashSet::new();
-        for comp in &self.writes {
-            if !seen.insert(comp) {
-                dupes.insert(comp.clone());
-            }
-        }
+        let mut writes = self.writes.clone();
+        writes.sort_unstable();
 
-        if !dupes.is_empty() {
+        if let Some(dupe) = writes.windows(2).find(|w| w[0] == w[1]) {
             return Err(format!(
-                "uh oh duplicate writes on same component: {dupes:?}",
+                "uh oh duplicate write on same component: {:?}",
+                dupe[0]
             ));
         }
 
@@ -643,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "uh oh duplicate writes on same component: {ComponentId(0)}")]
+    #[should_panic(expected = "uh oh duplicate writes on same component: ComponentId(0)")]
     fn test_access_validation_same_component_multiple_writes() {
         let mut world = World::new();
         let mut scheduler = Scheduler::new();

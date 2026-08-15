@@ -8,7 +8,7 @@ use super::{
     },
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ComponentId(u32);
 
 impl SparseIndex for ComponentId {
@@ -277,7 +277,7 @@ impl<T1: Component, T2: Component, T3: Component> TupleAddComponent for (T1, T2,
 
 #[cfg(test)]
 mod tests {
-    use crate::{ecs::world::World, App, State};
+    use crate::{App, State, ecs::world::World};
 
     use super::*;
 
@@ -411,21 +411,25 @@ mod tests {
 
         assert!(state.world.components.get(c_info.id()).is_some());
 
-        assert!(!state
-            .world
-            .components
-            .get(c_info.id())
-            .unwrap()
-            .entities
-            .is_empty());
+        assert!(
+            !state
+                .world
+                .components
+                .get(c_info.id())
+                .unwrap()
+                .entities
+                .is_empty()
+        );
 
-        assert!(!state
-            .world
-            .components
-            .get(c_info.id())
-            .unwrap()
-            .entities
-            .is_empty());
+        assert!(
+            !state
+                .world
+                .components
+                .get(c_info.id())
+                .unwrap()
+                .entities
+                .is_empty()
+        );
 
         let c_info = state
             .world
@@ -435,12 +439,14 @@ mod tests {
 
         assert!(state.world.components.get(c_info.id()).is_some());
 
-        assert!(!state
-            .world
-            .components
-            .get(c_info.id())
-            .unwrap()
-            .entities
-            .is_empty());
+        assert!(
+            !state
+                .world
+                .components
+                .get(c_info.id())
+                .unwrap()
+                .entities
+                .is_empty()
+        );
     }
 }
